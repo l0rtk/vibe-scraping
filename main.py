@@ -22,11 +22,20 @@ def scrape_webpage(url):
         return soup.get_text()
     return None
 
-def extract_product_info(text, model="meta-llama/llama-4-scout-17b-16e-instruct"):
-    """Extract product information using Groq API."""
+def extract_product_info(text, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None):
+    """Extract product information using Groq API.
+    
+    Args:
+        text: The text content to analyze
+        model: The model to use
+        custom_prompt: Custom prompt to use instead of the default
+    """
     groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
     
-    prompt = f"Extract the product name, price, and description and the product attributes from the following text: {text}"
+    if custom_prompt:
+        prompt = f"{custom_prompt}: {text}"
+    else:
+        prompt = f"Extract the product name, price, and description and the product attributes from the following text: {text}"
     
     response = groq.chat.completions.create(
         model=model,
@@ -78,16 +87,22 @@ def print_results(product_info, cost_info, model):
         print(f"Cost calculation unavailable for model: {model}\n")
         print(f"Estimated price for this operation: Unknown (pricing data not available for {model})")
 
-def process_product_page(url, model="meta-llama/llama-4-scout-17b-16e-instruct"):
-    """Process a product page from start to finish."""
+def process_product_page(url, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None):
+    """Process a product page from start to finish.
+    
+    Args:
+        url: The URL of the product page
+        model: The model to use
+        custom_prompt: Optional custom prompt to use
+    """
     # Scrape the webpage
     text = scrape_webpage(url)
     if not text:
         print("Failed to retrieve the page")
-        return
+        return None, None
     
     # Extract product information
-    product_info = extract_product_info(text, model)
+    product_info = extract_product_info(text, model, custom_prompt)
     
     # Calculate cost
     cost_info = calculate_cost(product_info["usage"], model)
