@@ -33,6 +33,12 @@ result = process_product_page(
     model="meta-llama/llama-4-maverick-17b-128e-instruct"
 )
 
+# Process with a custom prompt
+result = process_product_page(
+    "https://example.com/product/some-product",
+    custom_prompt="Extract only the pricing information and available colors from"
+)
+
 # Access the extracted information and cost details
 product_info, cost_info = result
 print(product_info["content"])  # The extracted product details
@@ -49,6 +55,9 @@ python cli.py https://example.com/product/some-product
 
 # Specify a different model
 python cli.py https://example.com/product/some-product --model meta-llama/llama-4-maverick-17b-128e-instruct
+
+# Use a custom prompt
+python cli.py https://example.com/product/some-product --prompt "Extract only the technical specifications and warranty information from"
 
 # Only output the extracted information (no token usage or cost details)
 python cli.py https://example.com/product/some-product --quiet
@@ -78,10 +87,10 @@ This script demonstrates:
 ## Functions
 
 - `scrape_webpage(url)`: Scrapes text content from a given URL
-- `extract_product_info(text, model)`: Uses Groq API to extract product information
+- `extract_product_info(text, model, custom_prompt)`: Uses Groq API to extract product information
 - `calculate_cost(usage, model)`: Calculates the cost of the API call
 - `print_results(product_info, cost_info, model)`: Prints the results in a formatted way
-- `process_product_page(url, model)`: Main function that combines all steps
+- `process_product_page(url, model, custom_prompt)`: Main function that combines all steps
 
 ## Supported Models
 
