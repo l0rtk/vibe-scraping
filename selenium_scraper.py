@@ -185,9 +185,15 @@ def clear_cookies_and_cache(driver):
     """Clear cookies and cache to avoid detection"""
     try:
         driver.delete_all_cookies()
-        driver.execute_script("window.localStorage.clear();")
-        driver.execute_script("window.sessionStorage.clear();")
-        logger.info("Cleared cookies and cache")
+        
+        # Only try to clear storage if we're on a valid page (not data: URL)
+        current_url = driver.current_url
+        if current_url and not current_url.startswith("data:"):
+            driver.execute_script("window.localStorage.clear();")
+            driver.execute_script("window.sessionStorage.clear();")
+            logger.info("Cleared cookies and cache")
+        else:
+            logger.info("Cleared cookies only (storage clearing skipped - not on a valid page)")
     except Exception as e:
         logger.warning(f"Error clearing cookies and cache: {e}")
 
@@ -215,19 +221,19 @@ def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetect
             logger.error("Failed to initialize Chrome driver")
             return None
         
-        # Clear cookies and cache first
+        # Load the page with a referrer to look more natural
+        logger.info(f"Navigating to {url}...")
+        driver.get(url)
+        
+        # Clear cookies and cache after loading the page
         clear_cookies_and_cache(driver)
         
-        # Load the page with a referrer to look more natural
         driver.execute_script(f"""
             var meta = document.createElement('meta');
             meta.name = 'referrer';
             meta.content = 'origin';
             document.getElementsByTagName('head')[0].appendChild(meta);
         """)
-        
-        logger.info(f"Navigating to {url}...")
-        driver.get(url)
         
         # Wait for the page to load
         time.sleep(3 + random.random() * 2)  # Random wait between 3-5 seconds
