@@ -23,6 +23,12 @@ GROQ_API_KEY=your_api_key_here
 pip install selenium webdriver-manager
 ```
 
+5. (Optional) For websites with advanced anti-bot protections:
+
+```
+pip install undetected-chromedriver
+```
+
 ## Usage
 
 ### As a Library
@@ -78,6 +84,15 @@ python cli.py https://example.com/product/some-product --selenium
 # Disable Selenium fallback (use only regular requests)
 python cli.py https://example.com/product/some-product --no-selenium
 
+# Save scraped content to a file (useful when API is down)
+python cli.py https://example.com/product/some-product --save-content scraped_data.txt
+
+# Use previously saved content instead of scraping again
+python cli.py https://example.com/product/some-product --use-saved scraped_data.txt
+
+# Increase API retries for unstable connections
+python cli.py https://example.com/product/some-product --max-retries 5
+
 # Only output the extracted information (no token usage or cost details)
 python cli.py https://example.com/product/some-product --quiet
 ```
@@ -130,10 +145,53 @@ Some websites rely heavily on JavaScript to load content, which makes them diffi
 3. Selenium launches a headless Chrome browser to render the page with JavaScript
 4. The rendered HTML is then processed to extract text
 
+## Handling Websites with Anti-Bot Protections
+
+Some websites use sophisticated anti-bot protections that can block even Selenium. For these cases, the library includes advanced features:
+
+1. **Undetected ChromeDriver**: Uses a specialized version of ChromeDriver that bypasses common detection methods
+2. **Human-like Behavior**: Mimics human browsing patterns with random scrolling, pauses, and interactions
+3. **Browser Fingerprinting Protection**: Modifies browser properties to avoid detection
+
+### Prerequisites:
+
+```bash
+pip install undetected-chromedriver
+```
+
+### Usage:
+
+```bash
+# Using the CLI
+python cli.py https://protected-site.com/product --selenium
+
+# In code
+from selenium_scraper import scrape_with_selenium
+html = scrape_with_selenium(url, headless=False, undetected=True)
+```
+
+## Handling API Failures
+
+The library includes robust error handling for API calls:
+
+1. **Automatic Retries**: Will retry failed API calls with exponential backoff
+2. **Content Saving**: Can save scraped content to a file for later processing
+3. **Offline Mode**: Can use previously saved content when the API is down
+
+Example workflow for unstable connections:
+
+```bash
+# First scrape and save content (even if API call fails)
+python cli.py https://example.com/product --save-content product_data.txt
+
+# Later process the saved content
+python cli.py https://example.com/product --use-saved product_data.txt
+```
+
 ## Functions
 
 - `scrape_webpage(url, use_selenium_fallback=True)`: Scrapes content from a URL
-- `extract_product_info(text, model, custom_prompt)`: Uses Groq API to extract product information
+- `extract_product_info(text, model, custom_prompt, max_retries=3)`: Uses Groq API to extract product information
 - `calculate_cost(usage, model)`: Calculates the cost of the API call
 - `print_results(product_info, cost_info, model)`: Prints the results in a formatted way
 - `process_product_page(url, model, custom_prompt, use_selenium_fallback)`: Main function that combines all steps
