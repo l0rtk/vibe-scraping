@@ -3,6 +3,13 @@ from bs4 import BeautifulSoup
 from groq import Groq
 from dotenv import load_dotenv
 import os
+import time
+import random
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -14,12 +21,120 @@ MODEL_PRICING = {
     "meta-llama/llama-4-maverick-17b-128e-instruct": {"input": 0.20, "output": 0.60},
 }
 
-def scrape_webpage(url):
-    """Scrape content from a webpage."""
-    response = requests.get(url)
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
-        return soup.get_text()
+def scrape_webpage(url, max_retries=3, use_selenium_fallback=True):
+    """Scrape content from a webpage, mimicking a real browser.
+    
+    Args:
+        url: URL to scrape
+        max_retries: Maximum number of retry attempts
+        use_selenium_fallback: Whether to try Selenium if regular requests fail
+    
+    Returns:
+        Extracted text content or None if failed
+    """
+    # Common user agents to mimic real browsers
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
+    ]
+    
+    # Common headers to appear like a real browser
+    headers = {
+        "User-Agent": random.choice(user_agents),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0"
+    }
+    
+    # First, try with regular requests
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Attempting to retrieve {url} (attempt {attempt+1}/{max_retries})...")
+            
+            # Add a slight delay between retries to avoid triggering rate limits
+            if attempt > 0:
+                time.sleep(2 + random.random() * 3)  # Sleep 2-5 seconds between retries
+            
+            # Make the request with headers to appear more like a real browser
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Check if we need to clean up the content (remove scripts, styles, etc.)
+                for script in soup(["script", "style"]):
+                    script.extract()
+                
+                # Get the text
+                text = soup.get_text(separator=' ', strip=True)
+                logger.info(f"Successfully retrieved {len(text)} characters of text")
+                
+                # If text content is too short, it might indicate a blocking mechanism
+                if len(text) < 500:
+                    logger.warning(f"Warning: Retrieved text is suspiciously short ({len(text)} chars)")
+                    logger.warning("The site might be blocking scraping or requiring JavaScript")
+                    
+                    # Try again with a different approach - get the raw HTML
+                    if len(text) < 100:
+                        logger.info("Attempting to extract from raw HTML...")
+                        # Use a more permissive approach to extract text
+                        text = ' '.join(soup.stripped_strings)
+                        logger.info(f"Extracted {len(text)} characters using alternative method")
+                
+                # Check if content is substantial enough or if we should try Selenium
+                if len(text) > 500 or not use_selenium_fallback:
+                    return text
+                else:
+                    logger.warning("Content may be incomplete, trying Selenium as fallback...")
+                    break  # Move to Selenium fallback
+            else:
+                logger.error(f"Failed to retrieve page (Status code: {response.status_code})")
+        
+        except Exception as e:
+            logger.error(f"Error during page retrieval: {str(e)}")
+    
+    # If we get here and use_selenium_fallback is True, try with Selenium
+    if use_selenium_fallback:
+        try:
+            logger.info("Attempting to scrape with Selenium (headless Chrome)...")
+            
+            # Import the Selenium scraper (only when needed to avoid dependencies)
+            from selenium_scraper import scrape_with_selenium
+            
+            # Get the HTML with Selenium
+            html_content = scrape_with_selenium(url)
+            
+            if html_content and len(html_content) > 0:
+                # Parse the HTML with BeautifulSoup
+                soup = BeautifulSoup(html_content, 'html.parser')
+                
+                # Clean up the content
+                for script in soup(["script", "style"]):
+                    script.extract()
+                
+                # Extract text
+                text = soup.get_text(separator=' ', strip=True)
+                logger.info(f"Successfully retrieved {len(text)} characters using Selenium")
+                
+                return text
+            else:
+                logger.error("Failed to retrieve content with Selenium")
+        
+        except ImportError:
+            logger.error("Selenium is not installed. To use the Selenium fallback, install selenium and webdriver-manager.")
+        except Exception as e:
+            logger.error(f"Error during Selenium scraping: {str(e)}")
+    
+    logger.error(f"Failed to retrieve the page after all attempts")
     return None
 
 def extract_product_info(text, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None):
@@ -87,16 +202,17 @@ def print_results(product_info, cost_info, model):
         print(f"Cost calculation unavailable for model: {model}\n")
         print(f"Estimated price for this operation: Unknown (pricing data not available for {model})")
 
-def process_product_page(url, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None):
+def process_product_page(url, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None, use_selenium_fallback=True):
     """Process a product page from start to finish.
     
     Args:
         url: The URL of the product page
         model: The model to use
         custom_prompt: Optional custom prompt to use
+        use_selenium_fallback: Whether to use Selenium as a fallback if regular scraping fails
     """
     # Scrape the webpage
-    text = scrape_webpage(url)
+    text = scrape_webpage(url, use_selenium_fallback=use_selenium_fallback)
     if not text:
         print("Failed to retrieve the page")
         return None, None
