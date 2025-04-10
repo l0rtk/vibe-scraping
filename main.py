@@ -137,34 +137,63 @@ def scrape_webpage(url, max_retries=3, use_selenium_fallback=True):
     logger.error(f"Failed to retrieve the page after all attempts")
     return None
 
-def extract_product_info(text, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None):
+def extract_product_info(text, model="meta-llama/llama-4-scout-17b-16e-instruct", custom_prompt=None, max_retries=3):
     """Extract product information using Groq API.
     
     Args:
         text: The text content to analyze
         model: The model to use
         custom_prompt: Custom prompt to use instead of the default
-    """
-    groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        max_retries: Maximum number of retries for API calls
     
+    Returns:
+        Dictionary containing the extracted content and token usage
+    """
+    import time
+    
+    # Prepare the prompt
     if custom_prompt:
         prompt = f"{custom_prompt}: {text}"
     else:
         prompt = f"Extract the product name, price, and description and the product attributes from the following text: {text}"
     
-    response = groq.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    # Initialize Groq client
+    groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
     
-    return {
-        "content": response.choices[0].message.content,
-        "usage": {
-            "input_tokens": response.usage.prompt_tokens,
-            "output_tokens": response.usage.completion_tokens,
-            "total_tokens": response.usage.total_tokens
-        }
-    }
+    # Add retry logic
+    retry_count = 0
+    backoff_time = 1.0  # Start with 1 second backoff
+    
+    while retry_count <= max_retries:
+        try:
+            logger.info(f"Sending request to Groq API (attempt {retry_count + 1}/{max_retries + 1})...")
+            
+            # Set timeout to avoid hanging
+            response = groq.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=60.0  # 60 second timeout
+            )
+            
+            return {
+                "content": response.choices[0].message.content,
+                "usage": {
+                    "input_tokens": response.usage.prompt_tokens,
+                    "output_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens
+                }
+            }
+        
+        except Exception as e:
+            retry_count += 1
+            if retry_count <= max_retries:
+                logger.warning(f"API call failed: {str(e)}")
+                logger.info(f"Retrying in {backoff_time:.2f} seconds...")
+                time.sleep(backoff_time)
+                backoff_time *= 2  # Exponential backoff
+            else:
+                logger.error(f"All retry attempts failed: {str(e)}")
+                raise Exception(f"Failed to get response from Groq API after {max_retries + 1} attempts: {str(e)}")
 
 def calculate_cost(usage, model):
     """Calculate the cost based on token usage."""

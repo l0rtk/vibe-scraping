@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import os
+import json
 from main import process_product_page, MODEL_PRICING, scrape_webpage, extract_product_info, calculate_cost, print_results
 
 def main():
@@ -30,6 +32,20 @@ def main():
         action="store_true",
         help="Disable Selenium fallback (use only regular requests)"
     )
+    parser.add_argument(
+        "--save-content",
+        help="Save the scraped content to the specified file"
+    )
+    parser.add_argument(
+        "--use-saved",
+        help="Use content from a previously saved file instead of scraping"
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum number of retries for API calls (default: 3)"
+    )
     
     args = parser.parse_args()
     
@@ -38,7 +54,39 @@ def main():
         print("Error: Cannot use both --selenium and --no-selenium options")
         return
     
-    # Process the product page with optional custom prompt
+    # Check if using saved content
+    if args.use_saved:
+        if not os.path.exists(args.use_saved):
+            print(f"Error: Saved content file '{args.use_saved}' not found")
+            return
+        
+        try:
+            with open(args.use_saved, 'r', encoding='utf-8') as f:
+                text = f.read()
+            
+            print(f"Loaded {len(text)} characters from '{args.use_saved}'")
+            
+            # Process the text through the model
+            try:
+                product_info = extract_product_info(text, args.model, args.prompt, max_retries=args.max_retries)
+                cost_info = calculate_cost(product_info["usage"], args.model)
+                
+                # Print results
+                if args.quiet:
+                    print(product_info["content"])
+                else:
+                    print_results(product_info, cost_info, args.model)
+            except Exception as e:
+                print(f"Error processing content with LLM: {str(e)}")
+                print("Content was loaded but could not be processed by the model.")
+        except Exception as e:
+            print(f"Error reading saved content: {str(e)}")
+        
+        return
+    
+    # Process with web scraping
+    text = None
+    
     if args.selenium:
         # Import selenium_scraper only when needed
         try:
@@ -60,15 +108,30 @@ def main():
                 text = soup.get_text(separator=' ', strip=True)
                 print(f"Successfully retrieved {len(text)} characters using Selenium")
                 
-                # Process the text through the model
-                product_info = extract_product_info(text, args.model, args.prompt)
-                cost_info = calculate_cost(product_info["usage"], args.model)
+                # Save content if requested
+                if args.save_content:
+                    try:
+                        with open(args.save_content, 'w', encoding='utf-8') as f:
+                            f.write(text)
+                        print(f"Saved scraped content to '{args.save_content}'")
+                    except Exception as e:
+                        print(f"Error saving content: {str(e)}")
                 
-                # Print results
-                if args.quiet:
-                    print(product_info["content"])
-                else:
-                    print_results(product_info, cost_info, args.model)
+                # Process the text through the model
+                try:
+                    product_info = extract_product_info(text, args.model, args.prompt, max_retries=args.max_retries)
+                    cost_info = calculate_cost(product_info["usage"], args.model)
+                    
+                    # Print results
+                    if args.quiet:
+                        print(product_info["content"])
+                    else:
+                        print_results(product_info, cost_info, args.model)
+                except Exception as e:
+                    print(f"Error processing content with LLM: {str(e)}")
+                    if args.save_content:
+                        print(f"Content was saved to '{args.save_content}' but could not be processed by the model.")
+                        print(f"You can try again later using: --use-saved {args.save_content}")
             else:
                 print("Failed to retrieve content with Selenium")
         except ImportError:
@@ -77,16 +140,40 @@ def main():
             print(f"Error during Selenium scraping: {str(e)}")
     else:
         # Use standard process_product_page with optional selenium fallback
-        product_info, cost_info = process_product_page(
-            args.url, 
-            args.model, 
-            args.prompt, 
-            use_selenium_fallback=not args.no_selenium
-        )
-        
-        # In quiet mode, only output the extracted information
-        if args.quiet and product_info:
-            print(product_info["content"])
+        try:
+            # First just get the text content
+            text = scrape_webpage(args.url, use_selenium_fallback=not args.no_selenium)
+            
+            if not text:
+                print("Failed to retrieve the page content")
+                return
+            
+            # Save content if requested
+            if args.save_content:
+                try:
+                    with open(args.save_content, 'w', encoding='utf-8') as f:
+                        f.write(text)
+                    print(f"Saved scraped content to '{args.save_content}'")
+                except Exception as e:
+                    print(f"Error saving content: {str(e)}")
+            
+            # Now process with the LLM
+            try:
+                product_info = extract_product_info(text, args.model, args.prompt, max_retries=args.max_retries)
+                cost_info = calculate_cost(product_info["usage"], args.model)
+                
+                # Print results
+                if args.quiet:
+                    print(product_info["content"])
+                else:
+                    print_results(product_info, cost_info, args.model)
+            except Exception as e:
+                print(f"Error processing content with LLM: {str(e)}")
+                if args.save_content:
+                    print(f"Content was saved to '{args.save_content}' but could not be processed by the model.")
+                    print(f"You can try again later using: --use-saved {args.save_content}")
+        except Exception as e:
+            print(f"Error during scraping process: {str(e)}")
 
 if __name__ == "__main__":
     main() 
