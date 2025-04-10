@@ -123,27 +123,68 @@ def human_like_interaction(driver):
         # Random wait before interaction
         time.sleep(1 + random.random() * 2)
         
-        # Get page dimensions
-        width = driver.execute_script("return document.documentElement.scrollWidth")
-        height = driver.execute_script("return document.documentElement.scrollHeight")
+        # Get viewport dimensions (visible area)
+        viewport_width = driver.execute_script("return window.innerWidth")
+        viewport_height = driver.execute_script("return window.innerHeight")
         
-        # Move mouse randomly
+        # Move mouse using relative movements within viewport boundaries
         actions = ActionChains(driver)
-        for _ in range(3):
-            x, y = random.randint(10, width-10), random.randint(10, min(height, 800))
-            actions.move_by_offset(x, y)
-            actions.perform()
-            time.sleep(0.5 + random.random())
         
-        # Click on visible elements randomly (avoiding links)
-        try:
-            elements = driver.find_elements(By.TAG_NAME, "div")
-            if elements:
-                random_element = random.choice(elements[:10])  # Choose from first 10 to avoid clicking on hidden elements
-                actions.move_to_element(random_element)
+        # Reset mouse position by moving to a known location first
+        actions.move_to_element(driver.find_element(By.TAG_NAME, "body"))
+        actions.perform()
+        
+        # Make a few small, random relative movements
+        for _ in range(3):
+            # Use smaller relative movements (-100 to +100 pixels)
+            x_offset = random.randint(-100, 100)
+            y_offset = random.randint(-100, 100)
+            
+            # Perform the movement with proper error handling
+            try:
+                actions = ActionChains(driver)
+                actions.move_by_offset(x_offset, y_offset)
                 actions.perform()
+                time.sleep(0.5 + random.random())
+            except Exception as e:
+                logger.debug(f"Mouse movement error: {e}")
+                # Reset mouse position if movement fails
+                actions = ActionChains(driver)
+                actions.move_to_element(driver.find_element(By.TAG_NAME, "body"))
+                actions.perform()
+        
+        # Try to interact with visible elements safely
+        try:
+            # Find visible, interactive elements
+            elements = driver.find_elements(By.CSS_SELECTOR, "div:not([style*='display:none']):not([style*='visibility:hidden'])")
+            if elements:
+                # Filter to elements that are in viewport
+                visible_elements = []
+                for elem in elements[:20]:  # Check first 20 to avoid too much processing
+                    try:
+                        if driver.execute_script("""
+                            var elem = arguments[0];
+                            var rect = elem.getBoundingClientRect();
+                            return (
+                                rect.top >= 0 &&
+                                rect.left >= 0 &&
+                                rect.bottom <= window.innerHeight &&
+                                rect.right <= window.innerWidth
+                            );
+                        """, elem):
+                            visible_elements.append(elem)
+                    except:
+                        continue
+                
+                # Move to a random visible element if any were found
+                if visible_elements:
+                    random_element = random.choice(visible_elements)
+                    actions = ActionChains(driver)
+                    actions.move_to_element(random_element)
+                    actions.perform()
+                    time.sleep(0.5 + random.random())
         except Exception as e:
-            logger.debug(f"Error during random element interaction: {e}")
+            logger.debug(f"Error during element interaction: {e}")
         
         # Press Page Down key a couple of times
         body = driver.find_element(By.TAG_NAME, "body")
