@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include requirements.txt
+include .env.example
+
+global-exclude *.py[cod] __pycache__ *.so 
