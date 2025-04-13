@@ -1,7 +1,5 @@
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -11,6 +9,7 @@ import time
 import random
 import logging
 import platform
+import shutil
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -28,6 +27,9 @@ def setup_selenium_driver(headless=True, undetected=True):
     # First try undetected-chromedriver if requested and available
     if undetected:
         try:
+            import sys
+            logger.info(f"Python path: {sys.path}")
+            logger.info(f"Trying to import undetected_chromedriver...")
             import undetected_chromedriver as uc
             logger.info("Using undetected-chromedriver to bypass bot detection")
             
@@ -42,10 +44,24 @@ def setup_selenium_driver(headless=True, undetected=True):
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             
-            # Create driver
-            driver = uc.Chrome(options=options)
+            # Get Chrome version from the system
+            import subprocess
+            try:
+                chrome_version_output = subprocess.check_output(['google-chrome', '--version']).decode('utf-8')
+                chrome_version = chrome_version_output.strip().split(' ')[2]  # Get the version number
+                major_version = chrome_version.split('.')[0]  # Just the major version number
+                logger.info(f"Detected Chrome version: {chrome_version} (major: {major_version})")
+                
+                # Create driver with specific version
+                driver = uc.Chrome(options=options, version_main=int(major_version))
+            except Exception as chrome_version_error:
+                logger.warning(f"Error detecting Chrome version: {chrome_version_error}")
+                # Fallback to default
+                driver = uc.Chrome(options=options)
+                
             return driver
-        except ImportError:
+        except ImportError as e:
+            logger.warning(f"undetected-chromedriver import error: {e}")
             logger.warning("undetected-chromedriver not installed. Falling back to standard Selenium.")
             logger.warning("Install with: pip install undetected-chromedriver")
         except Exception as e:
@@ -91,7 +107,15 @@ def setup_selenium_driver(headless=True, undetected=True):
     options.add_experimental_option("prefs", prefs)
     
     try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        # Check if chrome is available in PATH
+        chrome_path = shutil.which("google-chrome")
+        if not chrome_path:
+            chrome_path = shutil.which("chrome")
+            
+        if chrome_path:
+            logger.info(f"Using Chrome browser from: {chrome_path}")
+            
+        driver = webdriver.Chrome(options=options)
         
         # Execute CDP commands to bypass bot detection
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -238,7 +262,7 @@ def clear_cookies_and_cache(driver):
     except Exception as e:
         logger.warning(f"Error clearing cookies and cache: {e}")
 
-def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetected=True):
+def scrape_with_selenium(url, wait_time=10, scroll=True, headless=False, undetected=True):
     """Scrape a webpage using Selenium with Chrome.
     
     Args:
@@ -255,8 +279,8 @@ def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetect
     try:
         logger.info(f"Attempting to scrape {url} with Selenium...")
         
-        # Try with undetected-chromedriver first
-        driver = setup_selenium_driver(headless=headless, undetected=undetected)
+        # Try with undetected-chromedriver first - NOTE: Setting headless=False to bypass Cloudflare
+        driver = setup_selenium_driver(headless=False, undetected=undetected)
         
         if not driver:
             logger.error("Failed to initialize Chrome driver")
@@ -265,6 +289,17 @@ def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetect
         # Load the page with a referrer to look more natural
         logger.info(f"Navigating to {url}...")
         driver.get(url)
+        
+        # Wait longer for Cloudflare to process
+        logger.info("Waiting for page to load and possible Cloudflare check to pass...")
+        time.sleep(10 + random.random() * 5)  # Random wait between 10-15 seconds
+        
+        # Check if we hit a Cloudflare challenge or captcha
+        page_source = driver.page_source.lower()
+        if "cloudflare" in page_source and ("challenge" in page_source or "security check" in page_source):
+            logger.warning("Cloudflare protection detected, waiting longer...")
+            # Wait much longer for a human to potentially solve the challenge
+            time.sleep(30)  # Wait 30 seconds in case there's a timeout challenge
         
         # Clear cookies and cache after loading the page
         clear_cookies_and_cache(driver)
@@ -275,9 +310,6 @@ def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetect
             meta.content = 'origin';
             document.getElementsByTagName('head')[0].appendChild(meta);
         """)
-        
-        # Wait for the page to load
-        time.sleep(3 + random.random() * 2)  # Random wait between 3-5 seconds
         
         # Perform human-like interactions
         human_like_interaction(driver)
@@ -305,7 +337,26 @@ def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetect
         # Extract page content
         page_source = driver.page_source
         
+        # Check if we still have cloudflare protection
+        if "cloudflare" in page_source.lower() and len(page_source) < 5000:
+            logger.warning("Still detecting Cloudflare protection after waiting. Content may be limited.")
+        
+        # Parse with BeautifulSoup to extract text content
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Clean up the content
+        for script in soup(["script", "style"]):
+            script.extract()
+        
+        # Get the text
+        text = soup.get_text(separator=' ', strip=True)
+        
         logger.info(f"Successfully scraped page with Selenium (length: {len(page_source)})")
+        if len(text) < 1000:
+            logger.warning(f"Warning: Extracted text is suspiciously short ({len(text)} chars)")
+            logger.warning("This may indicate the site is blocking scraping")
+        
         return page_source
         
     except Exception as e:
@@ -314,6 +365,7 @@ def scrape_with_selenium(url, wait_time=10, scroll=True, headless=True, undetect
         
     finally:
         if driver:
+            logger.info("ensuring close")
             driver.quit()
 
 if __name__ == "__main__":
