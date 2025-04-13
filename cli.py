@@ -33,6 +33,11 @@ def main():
         help="Disable Selenium fallback (use only regular requests)"
     )
     parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run Selenium in headless mode (no visible browser window)"
+    )
+    parser.add_argument(
         "--save-content",
         help="Save the scraped content to the specified file"
     )
@@ -93,8 +98,8 @@ def main():
             from selenium_scraper import scrape_with_selenium
             from bs4 import BeautifulSoup
             
-            print(f"Scraping {args.url} with Selenium...")
-            html_content = scrape_with_selenium(args.url)
+            print(f"Scraping {args.url} with Selenium {'(headless)' if args.headless else '(with browser window)'}...")
+            html_content = scrape_with_selenium(args.url, headless=args.headless)
             
             if html_content:
                 # Parse the HTML with BeautifulSoup
