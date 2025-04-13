@@ -2,7 +2,7 @@
 import argparse
 import os
 import json
-from main import process_product_page, MODEL_PRICING, scrape_webpage, extract_product_info, calculate_cost, print_results
+from .main import process_product_page, MODEL_PRICING, scrape_webpage, extract_product_info, calculate_cost, print_results
 
 def main():
     parser = argparse.ArgumentParser(description="Scrape product information from a website")
@@ -95,7 +95,7 @@ def main():
     if args.selenium:
         # Import selenium_scraper only when needed
         try:
-            from selenium_scraper import scrape_with_selenium
+            from .selenium_scraper import scrape_with_selenium
             from bs4 import BeautifulSoup
             
             print(f"Scraping {args.url} with Selenium {'(headless)' if args.headless else '(with browser window)'}...")

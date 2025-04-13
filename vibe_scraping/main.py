@@ -108,7 +108,7 @@ def scrape_webpage(url, max_retries=3, use_selenium_fallback=True):
             logger.info("Attempting to scrape with Selenium (headless Chrome)...")
             
             # Import the Selenium scraper (only when needed to avoid dependencies)
-            from selenium_scraper import scrape_with_selenium
+            from .selenium_scraper import scrape_with_selenium
             
             # Get the HTML with Selenium
             html_content = scrape_with_selenium(url)
