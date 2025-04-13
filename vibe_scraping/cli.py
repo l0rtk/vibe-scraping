@@ -2,58 +2,12 @@
 import argparse
 import os
 import json
+import sys
 from .main import process_product_page, MODEL_PRICING, scrape_webpage, extract_product_info, calculate_cost, print_results
+from .crawler import crawl_site
 
-def main():
-    parser = argparse.ArgumentParser(description="Scrape product information from a website")
-    parser.add_argument("url", help="URL of the product page to scrape")
-    parser.add_argument(
-        "--model", 
-        default="meta-llama/llama-4-scout-17b-16e-instruct",
-        choices=list(MODEL_PRICING.keys()), 
-        help="Model to use for extraction"
-    )
-    parser.add_argument(
-        "--quiet", 
-        action="store_true", 
-        help="Only output the extracted product information"
-    )
-    parser.add_argument(
-        "--prompt",
-        help="Custom prompt to use for extraction. Default is to extract product name, price, description and attributes."
-    )
-    parser.add_argument(
-        "--selenium",
-        action="store_true",
-        help="Force using Selenium for scraping (for JavaScript-heavy sites)"
-    )
-    parser.add_argument(
-        "--no-selenium",
-        action="store_true",
-        help="Disable Selenium fallback (use only regular requests)"
-    )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        help="Run Selenium in headless mode (no visible browser window)"
-    )
-    parser.add_argument(
-        "--save-content",
-        help="Save the scraped content to the specified file"
-    )
-    parser.add_argument(
-        "--use-saved",
-        help="Use content from a previously saved file instead of scraping"
-    )
-    parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=3,
-        help="Maximum number of retries for API calls (default: 3)"
-    )
-    
-    args = parser.parse_args()
-    
+def run_product_extraction(args):
+    """Run the product extraction command"""
     # Check for conflicting options
     if args.selenium and args.no_selenium:
         print("Error: Cannot use both --selenium and --no-selenium options")
@@ -180,5 +134,176 @@ def main():
         except Exception as e:
             print(f"Error during scraping process: {str(e)}")
 
+def run_crawler(args):
+    """Run the web crawler command"""
+    try:
+        print(f"Starting crawl from {args.url}")
+        print(f"Max depth: {args.depth}, Max pages: {args.pages}")
+        print(f"Method: {args.method}, Delay: {args.delay}s")
+        print(f"Output directory: {args.output}")
+        
+        # Run the crawler
+        stats = crawl_site(
+            start_url=args.url,
+            output_dir=args.output,
+            max_depth=args.depth,
+            max_pages=args.pages,
+            crawl_method=args.method,
+            delay=args.delay,
+            follow_subdomains=args.subdomains,
+            use_selenium=args.selenium,
+            url_filter=args.filter
+        )
+        
+        # Print statistics
+        print("\nCrawl completed:")
+        print(f"Pages crawled: {stats['pages_crawled']}")
+        print(f"Domain: {stats['domain']}")
+        
+        # Save stats to a JSON file
+        stats_file = os.path.join(args.output, "crawl_stats.json")
+        with open(stats_file, 'w') as f:
+            json.dump(stats, f, indent=2)
+        print(f"Statistics saved to: {stats_file}")
+        
+    except Exception as e:
+        print(f"Error during crawling: {str(e)}")
+        return 1
+    
+    return 0
+
+def main():
+    # Create the top-level parser
+    parser = argparse.ArgumentParser(description="Vibe Scraping - Web scraping and product information extraction")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+    
+    # Parser for the 'extract' command (original functionality)
+    extract_parser = subparsers.add_parser("extract", help="Extract product information from a single URL")
+    extract_parser.add_argument("url", help="URL of the product page to scrape")
+    extract_parser.add_argument(
+        "--model", 
+        default="meta-llama/llama-4-scout-17b-16e-instruct",
+        choices=list(MODEL_PRICING.keys()), 
+        help="Model to use for extraction"
+    )
+    extract_parser.add_argument(
+        "--quiet", 
+        action="store_true", 
+        help="Only output the extracted product information"
+    )
+    extract_parser.add_argument(
+        "--prompt",
+        help="Custom prompt to use for extraction. Default is to extract product name, price, description and attributes."
+    )
+    extract_parser.add_argument(
+        "--selenium",
+        action="store_true",
+        help="Force using Selenium for scraping (for JavaScript-heavy sites)"
+    )
+    extract_parser.add_argument(
+        "--no-selenium",
+        action="store_true",
+        help="Disable Selenium fallback (use only regular requests)"
+    )
+    extract_parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run Selenium in headless mode (no visible browser window)"
+    )
+    extract_parser.add_argument(
+        "--save-content",
+        help="Save the scraped content to the specified file"
+    )
+    extract_parser.add_argument(
+        "--use-saved",
+        help="Use content from a previously saved file instead of scraping"
+    )
+    extract_parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum number of retries for API calls (default: 3)"
+    )
+    
+    # Parser for the 'crawl' command (new functionality)
+    crawl_parser = subparsers.add_parser("crawl", help="Crawl a website and save pages")
+    crawl_parser.add_argument("url", help="URL to start crawling from")
+    crawl_parser.add_argument(
+        "--output", 
+        default="crawled_data", 
+        help="Directory to save the crawled data"
+    )
+    crawl_parser.add_argument(
+        "--depth", 
+        type=int, 
+        default=2, 
+        help="Maximum crawl depth"
+    )
+    crawl_parser.add_argument(
+        "--pages", 
+        type=int, 
+        default=100, 
+        help="Maximum number of pages to crawl"
+    )
+    crawl_parser.add_argument(
+        "--method", 
+        choices=["breadth", "depth"], 
+        default="breadth", 
+        help="Crawling method"
+    )
+    crawl_parser.add_argument(
+        "--delay", 
+        type=float, 
+        default=1.0, 
+        help="Delay between requests in seconds"
+    )
+    crawl_parser.add_argument(
+        "--subdomains", 
+        action="store_true", 
+        help="Follow links to subdomains"
+    )
+    crawl_parser.add_argument(
+        "--selenium", 
+        action="store_true", 
+        help="Use Selenium for JavaScript rendering if needed"
+    )
+    crawl_parser.add_argument(
+        "--filter", 
+        help="Regular expression pattern for URLs to follow"
+    )
+    crawl_parser.add_argument(
+        "--revisit", 
+        choices=["never", "daily", "always"], 
+        default="never", 
+        help="Policy for revisiting pages"
+    )
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
+    # Handle case where no command is specified
+    if not args.command:
+        # For backward compatibility, default to extract command if a URL is provided directly
+        if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
+            # Check if the first argument appears to be a URL
+            potential_url = sys.argv[1]
+            if potential_url.startswith(('http://', 'https://')):
+                # Invoke the extract command with the arguments
+                args = parser.parse_args(['extract'] + sys.argv[1:])
+            else:
+                parser.print_help()
+                return 1
+        else:
+            parser.print_help()
+            return 1
+    
+    # Dispatch to the appropriate command
+    if args.command == "extract":
+        run_product_extraction(args)
+    elif args.command == "crawl":
+        return run_crawler(args)
+    
+    return 0
+
 if __name__ == "__main__":
-    main() 
+    sys.exit(main()) 
