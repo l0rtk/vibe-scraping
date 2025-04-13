@@ -2,18 +2,26 @@
 
 A lightweight library for scraping product information from websites and extracting structured data using Groq API.
 
-## Setup
+## Installation
+
+### From PyPI (not yet available)
 
 ```bash
-# Install basic dependencies
-pip install requests beautifulsoup4 groq python-dotenv
-
-# For JavaScript-heavy sites
-pip install selenium
-
-# For sites with anti-bot protection
-pip install undetected-chromedriver
+pip install vibe-scraping
 ```
+
+### From source
+
+```bash
+git clone https://github.com/yourusername/vibe-scraping.git
+cd vibe-scraping
+pip install -e .  # Install in development mode
+
+# To install with all extras
+pip install -e ".[advanced]"
+```
+
+## Setup
 
 Create a `.env` file with your Groq API key:
 
@@ -21,19 +29,37 @@ Create a `.env` file with your Groq API key:
 GROQ_API_KEY=your_api_key_here
 ```
 
+## Directory Structure
+
+```
+├── vibe_scraping/           # Main package
+│   ├── __init__.py          # Package initialization
+│   ├── main.py              # Core library functions
+│   ├── selenium_scraper.py  # Selenium-based scraper
+│   └── cli.py               # Command-line interface
+├── setup.py                 # Package setup file
+├── LICENSE                  # MIT License
+├── MANIFEST.in              # Package manifest
+├── README.md                # Documentation
+└── requirements.txt         # Dependencies
+```
+
 ## Usage
 
 ### Command Line
 
 ```bash
-# Basic usage
-python cli.py https://example.com/product/some-product
+# If installed via pip
+vibe-scrape https://example.com/product/some-product
+
+# Or running directly from source
+python -m vibe_scraping.cli https://example.com/product/some-product
 
 # With custom prompt
-python cli.py https://example.com/product --prompt "Extract technical specs"
+vibe-scrape https://example.com/product --prompt "Extract technical specs"
 
 # For JavaScript-heavy sites (opens browser window)
-python cli.py https://example.com/product --selenium
+vibe-scrape https://example.com/product --selenium
 
 # Headless browser mode (faster but may be detected)
 python cli.py https://example.com/product --selenium --headless
