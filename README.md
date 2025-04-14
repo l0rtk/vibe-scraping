@@ -37,6 +37,7 @@ GROQ_API_KEY=your_api_key_here
 │   ├── main.py              # Core library functions
 │   ├── selenium_scraper.py  # Selenium-based scraper
 │   ├── crawler.py           # Web crawler
+│   ├── visualizer.py        # Graph visualization
 │   └── cli.py               # Command-line interface
 ├── setup.py                 # Package setup file
 ├── LICENSE                  # MIT License
@@ -97,6 +98,43 @@ vibe-scrape crawl https://example.com --selenium
 
 # Filter URLs by pattern
 vibe-scrape crawl https://example.com --filter "product/.*"
+
+# Generate a graph visualization after crawling
+vibe-scrape crawl https://example.com --graph
+
+# Generate a specific type of graph
+vibe-scrape crawl https://example.com --graph --graph-type domain
+
+# Create an interactive HTML visualization
+vibe-scrape crawl https://example.com --graph --graph-type interactive
+
+# Add a custom title to the graph
+vibe-scrape crawl https://example.com --graph --graph-title "My Website Crawl"
+```
+
+#### Graph Visualization
+
+```bash
+# Visualize previously crawled data
+vibe-scrape visualize crawled_data
+
+# Generate a domain-level graph
+vibe-scrape visualize crawled_data --type domain
+
+# Create an interactive visualization
+vibe-scrape visualize crawled_data --type interactive
+
+# Customize the output file path
+vibe-scrape visualize crawled_data --output my_graph.png
+
+# Set a custom title
+vibe-scrape visualize crawled_data --title "Website Structure"
+
+# Limit the number of nodes in the graph
+vibe-scrape visualize crawled_data --max-nodes 50
+
+# Hide labels on nodes
+vibe-scrape visualize crawled_data --no-labels
 ```
 
 ### Python Code
@@ -150,6 +188,47 @@ crawler = WebCrawler(
     respect_robots_txt=True  # Respect robots.txt rules
 )
 crawler.crawl()
+
+# Crawl and generate a graph in one step
+stats = crawl_site(
+    start_url="https://example.com",
+    output_dir="crawled_data",
+    max_depth=2,
+    max_pages=100,
+    generate_graph=True,  # Create a graph visualization
+    graph_type="page"     # "page", "domain", or "interactive"
+)
+print(f"Graph saved to: {stats.get('graph_file')}")
+```
+
+#### Graph Visualization
+
+```python
+from vibe_scraping import generate_crawl_graph, generate_domain_graph, create_dynamic_graph
+
+# Generate a page-level graph
+graph_file = generate_crawl_graph(
+    crawl_data_path="crawled_data",
+    output_file="crawl_graph.png",  # Optional, defaults to crawl_graph.png in crawl_data_path
+    max_nodes=100,                  # Limit the number of nodes
+    title="My Web Crawl Graph",     # Custom title
+    with_labels=True                # Show labels on nodes
+)
+
+# Generate a domain-level graph
+domain_graph = generate_domain_graph(
+    crawl_data_path="crawled_data",
+    output_file="domain_graph.png",
+    title="Domain Connections",
+    node_size_factor=100            # Node size based on page count
+)
+
+# Create an interactive HTML visualization
+# Requires pyvis: pip install pyvis
+interactive_graph = create_dynamic_graph(
+    crawl_data_path="crawled_data",
+    output_file="interactive_graph.html"
+)
 ```
 
 ## Key Features
@@ -165,6 +244,9 @@ crawler.crawl()
 - **Polite Crawling**: Respects robots.txt and implements politeness policies
 - **Crawl Methods**: Breadth-first and depth-first search strategies
 - **URL Filtering**: Regular expression-based URL filtering
+- **Graph Visualization**: Create visual representations of crawled websites
+- **Domain Analysis**: Visualize connections between domains
+- **Interactive Graphs**: Generate interactive HTML visualizations
 
 ## Web Crawler Features
 
@@ -180,6 +262,18 @@ The web crawler provides advanced features for collecting pages from websites:
 - **Breadth-First & Depth-First**: Choose the crawling strategy that fits your needs
 - **Subdomain Support**: Option to follow links to subdomains
 - **Selenium Integration**: Handle JavaScript-heavy sites with Selenium
+
+## Graph Visualization Features
+
+The library provides multiple ways to visualize crawled websites:
+
+- **Page-Level Graphs**: Visualize connections between individual pages
+- **Domain-Level Graphs**: See how different domains are interconnected
+- **Interactive Visualizations**: Create dynamic HTML graphs for exploration
+- **Customization Options**: Control node size, colors, labels, and layout
+- **Size-Based Nodes**: Node sizes reflect the number of pages in domains
+- **Color Coding**: Different colors for different domains
+- **Path Visualization**: See the crawl path and link relationships
 
 ## Handling Protected Sites
 

@@ -188,3 +188,11 @@ scraping_method_comparison.json
 
 
 page_screenshot.png
+
+# Graph visualization output files
+crawl_graph.png
+domain_graph.png
+interactive_graph.html
+*_graph.png
+*_graph.html
+crawled_data/*/visualizations/
