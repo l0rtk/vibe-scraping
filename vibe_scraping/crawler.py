@@ -20,10 +20,11 @@ import os
 from urllib.parse import urlparse, urljoin, urldefrag
 from urllib.robotparser import RobotFileParser
 from collections import deque
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from datetime import datetime
 import json
 import hashlib
+
 
 from .selenium_scraper import scrape_with_selenium
 
@@ -192,9 +193,14 @@ class WebCrawler:
         page_dir = os.path.join(self.save_path, url_hash)
         os.makedirs(page_dir, exist_ok=True)
         
-        # Save HTML content
+        # Save original HTML content
         with open(os.path.join(page_dir, "page.html"), 'w', encoding='utf-8') as f:
             f.write(html_content)
+            
+        # Save cleaned HTML content
+        cleaned_html = self._clean_html(html_content)
+        with open(os.path.join(page_dir, "cleaned.html"), 'w', encoding='utf-8') as f:
+            f.write(cleaned_html)
         
         # Save text content
         with open(os.path.join(page_dir, "content.txt"), 'w', encoding='utf-8') as f:
@@ -455,6 +461,38 @@ class WebCrawler:
         
         return None, None, None
     
+    def _clean_html(self, html_content):
+        """Clean the HTML content."""
+        soup = BeautifulSoup(html_content, 'html.parser')
+    
+        # Remove script and style elements
+        for script in soup(["script", "style", "noscript"]):
+            script.decompose()
+            
+        # Remove comments
+        for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+            comment.extract()
+            
+        # Remove unnecessary attributes from all elements
+        for tag in soup.find_all(True):
+            # Keep only essential attributes
+            attrs_to_keep = ['href', 'src', 'alt', 'title', 'class', 'id']
+            attrs = dict(tag.attrs)
+            for attr in attrs:
+                if attr not in attrs_to_keep:
+                    del tag[attr]
+                    
+        # Clean up whitespace
+        for tag in soup.find_all(True):
+            if tag.string:
+                tag.string = re.sub(r'\s+', ' ', tag.string).strip()
+                
+        # Get the cleaned HTML
+        cleaned_html = soup.prettify()
+        
+        return cleaned_html
+
+
     def get_crawl_stats(self):
         """Get statistics about the crawl."""
         return {
