@@ -143,6 +143,9 @@ def run_crawler(args):
         print(f"Method: {args.method}, Delay: {args.delay}s")
         print(f"Output directory: {args.output}")
         
+        if args.scrapy:
+            print("Using Scrapy for faster parallel crawling")
+        
         if args.graph:
             print(f"Will generate {args.graph_type} graph after crawling")
         
@@ -156,6 +159,7 @@ def run_crawler(args):
             delay=args.delay,
             follow_subdomains=args.subdomains,
             use_selenium=args.selenium,
+            use_scrapy=args.scrapy,
             url_filter=args.filter,
             generate_graph=args.graph,
             graph_type=args.graph_type,
@@ -308,6 +312,7 @@ def main():
     crawl_parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds")
     crawl_parser.add_argument("--subdomains", action="store_true", help="Follow links to subdomains")
     crawl_parser.add_argument("--selenium", action="store_true", help="Use Selenium for JavaScript rendering if needed")
+    crawl_parser.add_argument("--scrapy", action="store_true", help="Use Scrapy for faster parallel crawling")
     crawl_parser.add_argument("--filter", help="Regular expression pattern for URLs to follow")
     
     # Graph visualization options for crawl command

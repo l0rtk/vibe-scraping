@@ -33,7 +33,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class WebCrawler:
-    """Advanced web crawler with configurable depth and politeness policies."""
+    """Advanced web crawler with configurable depth and politeness policies.
+    
+    This crawler supports both regular HTTP-based crawling and fast parallel crawling using Scrapy.
+    It implements various politeness policies, respects robots.txt, and can generate graph visualizations
+    of the crawled data.
+    
+    The crawler can be configured to use either breadth-first or depth-first crawling strategies,
+    and supports both regular requests and Selenium for handling JavaScript-heavy sites.
+    
+    When using Scrapy (with use_scrapy=True), the crawler benefits from asynchronous and parallel
+    processing capabilities, which can significantly improve performance for large crawls.
+    """
     
     def __init__(
         self,
@@ -56,7 +67,8 @@ class WebCrawler:
         custom_headers=None,
         generate_graph=False,  # Whether to generate a graph visualization after crawling
         graph_type="page",     # "page", "domain", or "interactive"
-        graph_title=None       # Custom title for the graph
+        graph_title=None,      # Custom title for the graph
+        use_scrapy=False       # Whether to use Scrapy for faster parallel crawling
     ):
         """Initialize the web crawler with the specified parameters.
         
@@ -81,6 +93,7 @@ class WebCrawler:
             generate_graph: Whether to generate a graph visualization after crawling
             graph_type: Type of graph to generate ("page", "domain", or "interactive")
             graph_title: Title for the graph visualization
+            use_scrapy: Whether to use Scrapy for faster parallel crawling (default: False)
         """
         self.start_url = start_url
         self.max_depth = max_depth
@@ -95,6 +108,7 @@ class WebCrawler:
         self.follow_subdomains = follow_subdomains
         self.handle_ajax = handle_ajax
         self.revisit_policy = revisit_policy
+        self.use_scrapy = use_scrapy
         
         # Graph visualization settings
         self.generate_graph = generate_graph
@@ -323,6 +337,44 @@ class WebCrawler:
     
     def crawl(self):
         """Start the crawling process."""
+        if self.use_scrapy:
+            try:
+                from .scrapy_adapter import crawl_with_scrapy, SCRAPY_AVAILABLE
+                
+                if not SCRAPY_AVAILABLE:
+                    logger.warning("Scrapy is not installed. Falling back to regular crawler.")
+                else:
+                    logger.info("Using Scrapy for faster crawling")
+                    stats = crawl_with_scrapy(
+                        start_url=self.start_url,
+                        output_dir=self.save_path,
+                        max_depth=self.max_depth,
+                        max_pages=self.max_pages,
+                        delay=self.base_delay,
+                        follow_subdomains=self.follow_subdomains,
+                        url_filter=self.url_pattern.pattern if self.url_pattern else None,
+                        respect_robots=self.respect_robots_txt,
+                        generate_graph=self.generate_graph,
+                        graph_type=self.graph_type,
+                        graph_title=self.graph_title
+                    )
+                    
+                    # Update metadata
+                    self._update_metadata()
+                    
+                    # Extract page count and graph file path from stats
+                    self.page_count = stats.get('pages_crawled', 0)
+                    graph_file = stats.get('graph_file', None)
+                    
+                    logger.info(f"Scrapy crawl completed. Visited {self.page_count} pages.")
+                    return self.page_count, graph_file
+                    
+            except ImportError as e:
+                logger.warning(f"Could not import scrapy_adapter: {str(e)}. Falling back to regular crawler.")
+            except Exception as e:
+                logger.error(f"Error using Scrapy: {str(e)}. Falling back to regular crawler.")
+        
+        # Use regular crawling methods if not using Scrapy or if Scrapy failed
         if self.crawl_method == "breadth":
             self._breadth_first_crawl()
         else:
@@ -608,6 +660,7 @@ def crawl_site(
     delay=1.0,
     follow_subdomains=False,
     use_selenium=False,
+    use_scrapy=False,
     url_filter=None,
     generate_graph=False,
     graph_type="page",
@@ -625,6 +678,7 @@ def crawl_site(
         delay: Delay between requests in seconds
         follow_subdomains: Whether to follow links to subdomains
         use_selenium: Use Selenium for JavaScript rendering if needed
+        use_scrapy: Use Scrapy for faster parallel crawling
         url_filter: Regular expression pattern for URLs to follow
         generate_graph: Whether to generate a graph visualization after crawling
         graph_type: Type of graph to generate ("page", "domain", or "interactive")
@@ -646,7 +700,8 @@ def crawl_site(
         url_pattern=url_filter,
         generate_graph=generate_graph,
         graph_type=graph_type,
-        graph_title=graph_title
+        graph_title=graph_title,
+        use_scrapy=use_scrapy
     )
     
     # Start crawling
@@ -673,6 +728,7 @@ if __name__ == "__main__":
     parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds")
     parser.add_argument("--subdomains", action="store_true", help="Follow links to subdomains")
     parser.add_argument("--selenium", action="store_true", help="Use Selenium for JavaScript rendering if needed")
+    parser.add_argument("--scrapy", action="store_true", help="Use Scrapy for faster parallel crawling")
     parser.add_argument("--filter", help="Regular expression pattern for URLs to follow")
     
     args = parser.parse_args()
@@ -687,6 +743,7 @@ if __name__ == "__main__":
         delay=args.delay,
         follow_subdomains=args.subdomains,
         use_selenium=args.selenium,
+        use_scrapy=args.scrapy,
         url_filter=args.filter
     )
     
