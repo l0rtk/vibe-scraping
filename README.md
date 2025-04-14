@@ -1,6 +1,6 @@
-# Product Scraping Library
+# Vibe Scraping
 
-A lightweight library for scraping product information from websites and extracting structured data using Groq API.
+A comprehensive web crawling and data extraction library with visualization capabilities, powered by Groq API for structured data extraction.
 
 ## Installation
 
@@ -49,31 +49,6 @@ GROQ_API_KEY=your_api_key_here
 ## Usage
 
 ### Command Line
-
-#### Product Information Extraction
-
-```bash
-# If installed via pip
-vibe-scrape extract https://example.com/product/some-product
-
-# Or running directly from source
-python -m vibe_scraping.cli extract https://example.com/product/some-product
-
-# With custom prompt
-vibe-scrape extract https://example.com/product --prompt "Extract technical specs"
-
-# For JavaScript-heavy sites (opens browser window)
-vibe-scrape extract https://example.com/product --selenium
-
-# Headless browser mode (faster but may be detected)
-vibe-scrape extract https://example.com/product --selenium --headless
-
-# Save content for later use
-vibe-scrape extract https://example.com/product --save-content data.txt
-
-# Use previously saved content
-vibe-scrape extract https://example.com/product --use-saved data.txt
-```
 
 #### Web Crawler
 
@@ -137,28 +112,29 @@ vibe-scrape visualize crawled_data --max-nodes 50
 vibe-scrape visualize crawled_data --no-labels
 ```
 
-### Python Code
-
 #### Product Information Extraction
 
-```python
-from vibe_scraping import process_product_page
-
-# Simple usage
-result = process_product_page("https://example.com/product")
+```bash
+# Extract product information from a URL
+vibe-scrape extract https://example.com/product/some-product
 
 # With custom prompt
-result = process_product_page(
-    "https://example.com/product",
-    custom_prompt="Extract technical specifications from"
-)
+vibe-scrape extract https://example.com/product --prompt "Extract technical specs"
 
-# For JavaScript sites
-result = process_product_page(
-    "https://example.com/product",
-    use_selenium_fallback=True
-)
+# For JavaScript-heavy sites (opens browser window)
+vibe-scrape extract https://example.com/product --selenium
+
+# Headless browser mode (faster but may be detected)
+vibe-scrape extract https://example.com/product --selenium --headless
+
+# Save content for later use
+vibe-scrape extract https://example.com/product --save-content data.txt
+
+# Use previously saved content
+vibe-scrape extract https://example.com/product --use-saved data.txt
 ```
+
+### Python Code
 
 #### Web Crawler
 
@@ -231,22 +207,43 @@ interactive_graph = create_dynamic_graph(
 )
 ```
 
+#### Product Information Extraction
+
+```python
+from vibe_scraping import process_product_page
+
+# Simple usage
+result = process_product_page("https://example.com/product")
+
+# With custom prompt
+result = process_product_page(
+    "https://example.com/product",
+    custom_prompt="Extract technical specifications from"
+)
+
+# For JavaScript sites
+result = process_product_page(
+    "https://example.com/product",
+    use_selenium_fallback=True
+)
+```
+
 ## Key Features
 
+- **Web Crawler**: Collect pages from websites with configurable depth and breadth
+- **Graph Visualization**: Create visual representations of crawled websites
+- **Domain Analysis**: Visualize connections between domains
+- **Interactive Graphs**: Generate interactive HTML visualizations
 - **Regular Scraping**: Fast HTTP requests with BeautifulSoup parsing
 - **JavaScript Support**: Selenium-based scraping for dynamic content
 - **Anti-Bot Protection**: Bypass Cloudflare and other protections with undetected-chromedriver
+- **URL Normalization**: Avoids crawling the same page multiple times
+- **URL Filtering**: Regular expression-based filtering for targeted crawling
 - **Flexible Extraction**: Custom prompts for targeted information extraction
 - **Cost Tracking**: Monitor API usage and costs
 - **Offline Mode**: Save and reuse content to reduce API calls
 - **Error Handling**: Automatic retries and fallbacks
-- **Web Crawler**: Collect pages from websites with configurable depth
 - **Polite Crawling**: Respects robots.txt and implements politeness policies
-- **Crawl Methods**: Breadth-first and depth-first search strategies
-- **URL Filtering**: Regular expression-based URL filtering
-- **Graph Visualization**: Create visual representations of crawled websites
-- **Domain Analysis**: Visualize connections between domains
-- **Interactive Graphs**: Generate interactive HTML visualizations
 
 ## Web Crawler Features
 
@@ -262,6 +259,8 @@ The web crawler provides advanced features for collecting pages from websites:
 - **Breadth-First & Depth-First**: Choose the crawling strategy that fits your needs
 - **Subdomain Support**: Option to follow links to subdomains
 - **Selenium Integration**: Handle JavaScript-heavy sites with Selenium
+- **Duplicate URL Handling**: Automatically identifies and skips previously crawled URLs
+- **Revisit Policies**: Configurable policies for when to revisit pages ("never", "daily", "always")
 
 ## Graph Visualization Features
 
@@ -288,7 +287,9 @@ vibe-scrape extract https://protected-site.com/product --selenium
 vibe-scrape extract https://protected-site.com/product --selenium
 ```
 
-## Supported Models
+## Supported LLM Models
+
+For structured data extraction, the following models are supported:
 
 - meta-llama/llama-4-scout-17b-16e-instruct
 - meta-llama/llama-4-maverick-17b-128e-instruct
