@@ -5,6 +5,7 @@ import json
 import sys
 from .main import process_product_page, MODEL_PRICING, scrape_webpage, extract_product_info, calculate_cost, print_results
 from .crawler import crawl_site
+from .visualizer import generate_crawl_graph, generate_domain_graph, create_dynamic_graph
 
 def run_product_extraction(args):
     """Run the product extraction command"""
@@ -142,6 +143,9 @@ def run_crawler(args):
         print(f"Method: {args.method}, Delay: {args.delay}s")
         print(f"Output directory: {args.output}")
         
+        if args.graph:
+            print(f"Will generate {args.graph_type} graph after crawling")
+        
         # Run the crawler
         stats = crawl_site(
             start_url=args.url,
@@ -152,13 +156,22 @@ def run_crawler(args):
             delay=args.delay,
             follow_subdomains=args.subdomains,
             use_selenium=args.selenium,
-            url_filter=args.filter
+            url_filter=args.filter,
+            generate_graph=args.graph,
+            graph_type=args.graph_type,
+            graph_title=args.graph_title
         )
         
         # Print statistics
         print("\nCrawl completed:")
         print(f"Pages crawled: {stats['pages_crawled']}")
         print(f"Domain: {stats['domain']}")
+        
+        # Print graph information if generated
+        if args.graph and 'graph_file' in stats:
+            print(f"\nGraph visualization created: {stats['graph_file']}")
+            if args.graph_type == 'interactive':
+                print("Open this file in a web browser to view the interactive visualization.")
         
         # Save stats to a JSON file
         stats_file = os.path.join(args.output, "crawl_stats.json")
@@ -168,6 +181,66 @@ def run_crawler(args):
         
     except Exception as e:
         print(f"Error during crawling: {str(e)}")
+        return 1
+    
+    return 0
+
+def run_visualize(args):
+    """Run the visualization command"""
+    try:
+        print(f"Generating visualization for crawl data in {args.data_path}")
+        
+        if args.type == "page":
+            print("Generating page-level graph visualization...")
+            graph_file = generate_crawl_graph(
+                args.data_path,
+                output_file=args.output,
+                max_nodes=args.max_nodes,
+                title=args.title,
+                with_labels=not args.no_labels
+            )
+            if graph_file:
+                print(f"Graph visualization saved to: {graph_file}")
+            else:
+                print("Failed to generate graph visualization")
+                return 1
+                
+        elif args.type == "domain":
+            print("Generating domain-level graph visualization...")
+            graph_file = generate_domain_graph(
+                args.data_path,
+                output_file=args.output,
+                title=args.title,
+                node_size_factor=args.node_size,
+                with_labels=not args.no_labels
+            )
+            if graph_file:
+                print(f"Domain graph visualization saved to: {graph_file}")
+            else:
+                print("Failed to generate domain graph visualization")
+                return 1
+                
+        elif args.type == "interactive":
+            print("Generating interactive graph visualization...")
+            try:
+                graph_file = create_dynamic_graph(
+                    args.data_path,
+                    output_file=args.output
+                )
+                if graph_file:
+                    print(f"Interactive graph visualization saved to: {graph_file}")
+                    print("Open this file in a web browser to view the interactive graph.")
+                else:
+                    print("Failed to generate interactive graph visualization")
+                    return 1
+            except Exception as e:
+                print(f"Error generating interactive graph: {str(e)}")
+                print("To use interactive graphs, you need to install additional dependencies:")
+                print("pip install pyvis networkx")
+                return 1
+                
+    except Exception as e:
+        print(f"Error during visualization: {str(e)}")
         return 1
     
     return 0
@@ -225,57 +298,60 @@ def main():
         help="Maximum number of retries for API calls (default: 3)"
     )
     
-    # Parser for the 'crawl' command (new functionality)
-    crawl_parser = subparsers.add_parser("crawl", help="Crawl a website and save pages")
+    # Parser for the 'crawl' command
+    crawl_parser = subparsers.add_parser("crawl", help="Crawl a website and collect pages")
     crawl_parser.add_argument("url", help="URL to start crawling from")
-    crawl_parser.add_argument(
+    crawl_parser.add_argument("--output", default="crawled_data", help="Directory to save the crawled data")
+    crawl_parser.add_argument("--depth", type=int, default=2, help="Maximum crawl depth")
+    crawl_parser.add_argument("--pages", type=int, default=100, help="Maximum number of pages to crawl")
+    crawl_parser.add_argument("--method", choices=["breadth", "depth"], default="breadth", help="Crawling method")
+    crawl_parser.add_argument("--delay", type=float, default=1.0, help="Delay between requests in seconds")
+    crawl_parser.add_argument("--subdomains", action="store_true", help="Follow links to subdomains")
+    crawl_parser.add_argument("--selenium", action="store_true", help="Use Selenium for JavaScript rendering if needed")
+    crawl_parser.add_argument("--filter", help="Regular expression pattern for URLs to follow")
+    
+    # Graph visualization options for crawl command
+    crawl_parser.add_argument("--graph", action="store_true", help="Generate a graph visualization after crawling")
+    crawl_parser.add_argument("--graph-type", choices=["page", "domain", "interactive"], default="page", 
+                            help="Type of graph to generate (default: page)")
+    crawl_parser.add_argument("--graph-title", help="Title for the graph visualization")
+    
+    # Parser for the 'visualize' command (new functionality)
+    visualize_parser = subparsers.add_parser("visualize", help="Visualize crawl results as graphs")
+    visualize_parser.add_argument(
+        "data_path", 
+        help="Path to the directory containing crawl data"
+    )
+    visualize_parser.add_argument(
+        "--type", 
+        choices=["page", "domain", "interactive"], 
+        default="page",
+        help="Type of visualization to generate (default: page)"
+    )
+    visualize_parser.add_argument(
         "--output", 
-        default="crawled_data", 
-        help="Directory to save the crawled data"
+        help="Output file path for the graph image or HTML file"
     )
-    crawl_parser.add_argument(
-        "--depth", 
+    visualize_parser.add_argument(
+        "--title", 
+        help="Title for the graph visualization"
+    )
+    visualize_parser.add_argument(
+        "--max-nodes", 
         type=int, 
-        default=2, 
-        help="Maximum crawl depth"
+        default=100,
+        help="Maximum number of nodes to include in the page-level graph (default: 100)"
     )
-    crawl_parser.add_argument(
-        "--pages", 
+    visualize_parser.add_argument(
+        "--node-size", 
         type=int, 
-        default=100, 
-        help="Maximum number of pages to crawl"
+        default=100,
+        help="Node size factor for domain-level graph (default: 100)"
     )
-    crawl_parser.add_argument(
-        "--method", 
-        choices=["breadth", "depth"], 
-        default="breadth", 
-        help="Crawling method"
-    )
-    crawl_parser.add_argument(
-        "--delay", 
-        type=float, 
-        default=1.0, 
-        help="Delay between requests in seconds"
-    )
-    crawl_parser.add_argument(
-        "--subdomains", 
-        action="store_true", 
-        help="Follow links to subdomains"
-    )
-    crawl_parser.add_argument(
-        "--selenium", 
-        action="store_true", 
-        help="Use Selenium for JavaScript rendering if needed"
-    )
-    crawl_parser.add_argument(
-        "--filter", 
-        help="Regular expression pattern for URLs to follow"
-    )
-    crawl_parser.add_argument(
-        "--revisit", 
-        choices=["never", "daily", "always"], 
-        default="never", 
-        help="Policy for revisiting pages"
+    visualize_parser.add_argument(
+        "--no-labels", 
+        action="store_true",
+        help="Don't show labels on graph nodes"
     )
     
     # Parse arguments
@@ -299,9 +375,11 @@ def main():
     
     # Dispatch to the appropriate command
     if args.command == "extract":
-        run_product_extraction(args)
+        sys.exit(run_product_extraction(args))
     elif args.command == "crawl":
-        return run_crawler(args)
+        sys.exit(run_crawler(args))
+    elif args.command == "visualize":
+        sys.exit(run_visualize(args))
     
     return 0
 

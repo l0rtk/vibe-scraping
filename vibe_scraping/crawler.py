@@ -53,7 +53,10 @@ class WebCrawler:
         handle_ajax=False,
         revisit_policy="never",  # "never", "daily", "always"
         cookies=None,
-        custom_headers=None
+        custom_headers=None,
+        generate_graph=False,  # Whether to generate a graph visualization after crawling
+        graph_type="page",     # "page", "domain", or "interactive"
+        graph_title=None       # Custom title for the graph
     ):
         """Initialize the web crawler with the specified parameters.
         
@@ -75,6 +78,9 @@ class WebCrawler:
             revisit_policy: Policy for revisiting pages (default: "never")
             cookies: Custom cookies to use for requests (default: None)
             custom_headers: Custom headers to use for requests (default: None)
+            generate_graph: Whether to generate a graph visualization after crawling
+            graph_type: Type of graph to generate ("page", "domain", or "interactive")
+            graph_title: Title for the graph visualization
         """
         self.start_url = start_url
         self.max_depth = max_depth
@@ -89,6 +95,11 @@ class WebCrawler:
         self.follow_subdomains = follow_subdomains
         self.handle_ajax = handle_ajax
         self.revisit_policy = revisit_policy
+        
+        # Graph visualization settings
+        self.generate_graph = generate_graph
+        self.graph_type = graph_type
+        self.graph_title = graph_title
         
         # Set up parsing components
         parsed_url = urlparse(start_url)
@@ -199,30 +210,33 @@ class WebCrawler:
             
         # Save cleaned HTML content
         cleaned_html = self._clean_html(html_content)
-        with open(os.path.join(page_dir, "cleaned.html"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(page_dir, "page_cleaned.html"), 'w', encoding='utf-8') as f:
             f.write(cleaned_html)
-        
-        # Save text content
-        with open(os.path.join(page_dir, "content.txt"), 'w', encoding='utf-8') as f:
+            
+        # Save extracted text
+        with open(os.path.join(page_dir, "text.txt"), 'w', encoding='utf-8') as f:
             f.write(text_content)
-        
-        # Save metadata about the page
-        page_meta = {
+            
+        # Save page metadata including outgoing links
+        page_metadata = {
             "url": url,
             "crawl_time": datetime.now().isoformat(),
             "depth": depth,
-            "links_found": len(links),
-            "links": links
+            "links": links,
+            "text_length": len(text_content),
+            "html_length": len(html_content)
         }
         
-        with open(os.path.join(page_dir, "metadata.json"), 'w') as f:
-            json.dump(page_meta, f, indent=2)
-        
-        # Update global metadata
+        with open(os.path.join(page_dir, "metadata.json"), 'w', encoding='utf-8') as f:
+            json.dump(page_metadata, f, indent=2)
+            
+        # Update the global metadata with this page's info
         self.metadata["crawled_urls"][url] = {
-            "hash": url_hash,
             "last_visit": datetime.now().isoformat(),
-            "depth": depth
+            "depth": depth,
+            "hash": url_hash,
+            "links": links,  # Store links for graph representation
+            "text_length": len(text_content)
         }
     
     def _is_allowed_by_robots(self, url):
@@ -318,7 +332,15 @@ class WebCrawler:
         self._update_metadata()
         
         logger.info(f"Crawl completed. Visited {self.page_count} pages.")
-        return self.page_count
+        
+        # Generate graph visualization if requested
+        graph_file = None
+        if self.generate_graph:
+            graph_file = self.generate_graph_visualization()
+            if graph_file:
+                logger.info(f"Graph visualization saved to: {graph_file}")
+        
+        return self.page_count, graph_file
     
     def _breadth_first_crawl(self):
         """Perform breadth-first crawling."""
@@ -493,9 +515,9 @@ class WebCrawler:
         return cleaned_html
 
 
-    def get_crawl_stats(self):
+    def get_crawl_stats(self, graph_file=None):
         """Get statistics about the crawl."""
-        return {
+        stats = {
             "pages_crawled": self.page_count,
             "start_url": self.start_url,
             "max_depth": self.max_depth,
@@ -505,6 +527,75 @@ class WebCrawler:
             "end_time": datetime.now().isoformat() if self.crawl_start_time else None,
             "domain": self.base_domain
         }
+        
+        # Add graph file path if available
+        if graph_file:
+            stats["graph_file"] = graph_file
+            
+        return stats
+
+    def generate_graph_visualization(self, graph_type=None, title=None, output_file=None):
+        """
+        Generate a graph visualization of the crawled data.
+        
+        Args:
+            graph_type: Type of graph to generate ("page", "domain", or "interactive")
+            title: Custom title for the graph
+            output_file: Path to save the graph file
+            
+        Returns:
+            Path to the generated graph file or None if generation fails
+        """
+        graph_type = graph_type or self.graph_type or "page"
+        title = title or self.graph_title
+        
+        try:
+            # Import visualization functions only when needed
+            from .visualizer import (
+                generate_crawl_graph, 
+                generate_domain_graph, 
+                create_dynamic_graph
+            )
+            
+            if graph_type == "page":
+                return generate_crawl_graph(
+                    self.save_path, 
+                    output_file=output_file,
+                    title=title or f"Web Crawl Graph - {self.start_url}"
+                )
+            elif graph_type == "domain":
+                return generate_domain_graph(
+                    self.save_path,
+                    output_file=output_file,
+                    title=title or f"Domain Graph - {self.start_url}"
+                )
+            elif graph_type == "interactive":
+                return create_dynamic_graph(
+                    self.save_path,
+                    output_file=output_file
+                )
+            else:
+                logger.error(f"Unknown graph type: {graph_type}")
+                return None
+                
+        except ImportError:
+            logger.error("Could not import visualization modules. Make sure networkx and matplotlib are installed.")
+            return None
+        except Exception as e:
+            logger.error(f"Error generating graph: {str(e)}")
+            return None
+            
+    def generate_page_graph(self, title=None, output_file=None):
+        """Generate a page-level graph visualization."""
+        return self.generate_graph_visualization("page", title, output_file)
+        
+    def generate_domain_graph(self, title=None, output_file=None):
+        """Generate a domain-level graph visualization."""
+        return self.generate_graph_visualization("domain", title, output_file)
+        
+    def generate_interactive_graph(self, output_file=None):
+        """Generate an interactive HTML graph visualization."""
+        return self.generate_graph_visualization("interactive", None, output_file)
 
 
 # CLI function for using the crawler directly
@@ -517,7 +608,10 @@ def crawl_site(
     delay=1.0,
     follow_subdomains=False,
     use_selenium=False,
-    url_filter=None
+    url_filter=None,
+    generate_graph=False,
+    graph_type="page",
+    graph_title=None
 ):
     """
     Crawl a website and save the content to the specified directory.
@@ -532,9 +626,12 @@ def crawl_site(
         follow_subdomains: Whether to follow links to subdomains
         use_selenium: Use Selenium for JavaScript rendering if needed
         url_filter: Regular expression pattern for URLs to follow
+        generate_graph: Whether to generate a graph visualization after crawling
+        graph_type: Type of graph to generate ("page", "domain", or "interactive")
+        graph_title: Title for the graph visualization
     
     Returns:
-        Dictionary with crawl statistics
+        Dictionary with crawl statistics and graph file path if generated
     """
     # Create the crawler instance
     crawler = WebCrawler(
@@ -546,14 +643,20 @@ def crawl_site(
         crawl_method=crawl_method,
         follow_subdomains=follow_subdomains,
         selenium_fallback=use_selenium,
-        url_pattern=url_filter
+        url_pattern=url_filter,
+        generate_graph=generate_graph,
+        graph_type=graph_type,
+        graph_title=graph_title
     )
     
     # Start crawling
-    crawler.crawl()
+    pages_crawled, graph_file = crawler.crawl()
+    
+    # Get crawl stats
+    stats = crawler.get_crawl_stats(graph_file)
     
     # Return stats
-    return crawler.get_crawl_stats()
+    return stats
 
 
 # Example usage
