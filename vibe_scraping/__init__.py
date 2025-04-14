@@ -6,6 +6,7 @@ This package provides tools for:
 - Tracking API usage and costs
 - Crawling websites to collect pages with configurable depth
 - Visualizing web crawl results as interactive graphs
+- Fast parallel crawling using Scrapy (when installed)
 """
 
 __version__ = "0.2.0"
@@ -27,6 +28,13 @@ from .visualizer import (
     create_dynamic_graph
 )
 
+# Import Scrapy adapter if available
+try:
+    from .scrapy_adapter import crawl_with_scrapy, SCRAPY_AVAILABLE
+except ImportError:
+    # Define a placeholder for SCRAPY_AVAILABLE if the module is not available
+    SCRAPY_AVAILABLE = False
+
 __all__ = [
     'scrape_webpage',
     'extract_product_info',
@@ -40,5 +48,8 @@ __all__ = [
     # Visualization functions
     'generate_crawl_graph',
     'generate_domain_graph',
-    'create_dynamic_graph'
+    'create_dynamic_graph',
+    # Scrapy-related exports
+    'SCRAPY_AVAILABLE',
+    'crawl_with_scrapy'
 ]
