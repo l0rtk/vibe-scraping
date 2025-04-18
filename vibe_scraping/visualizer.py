@@ -71,6 +71,15 @@ def generate_crawl_graph(crawl_data_path, output_file=None, max_nodes=100, title
     # Create a directed graph
     G = nx.DiGraph()
     
+    # Get the start URL from metadata
+    start_url = metadata.get("start_url")
+    if not start_url and "crawl_stats" in metadata and "start_url" in metadata["crawl_stats"]:
+        start_url = metadata["crawl_stats"]["start_url"]
+    
+    # Add the start URL as the root node if it exists
+    if start_url:
+        G.add_node(start_url)
+    
     # Add nodes and edges from the metadata
     for url, data in crawled_urls.items():
         G.add_node(url)
@@ -80,19 +89,51 @@ def generate_crawl_graph(crawl_data_path, output_file=None, max_nodes=100, title
                 if link in crawled_urls:  # Only add edges to URLs that were also crawled
                     G.add_edge(url, link)
     
+    # If start_url is not directly connected to any node and other nodes exist,
+    # connect it to nodes with depth 1 or the lowest depth
+    if start_url and G.number_of_nodes() > 1:
+        # If start_url has no outgoing edges, connect it to first-level nodes
+        if G.out_degree(start_url) == 0:
+            # Find nodes at depth 1 or lowest available depth
+            depth_nodes = {}
+            for url, data in crawled_urls.items():
+                if url != start_url:
+                    depth = data.get("depth", float('inf'))
+                    if depth not in depth_nodes:
+                        depth_nodes[depth] = []
+                    depth_nodes[depth].append(url)
+            
+            # Get the min depth available
+            if depth_nodes:
+                min_depth = min(depth_nodes.keys())
+                
+                # Connect start_url to nodes at min_depth
+                for node in depth_nodes[min_depth]:
+                    if not G.has_edge(start_url, node):
+                        G.add_edge(start_url, node)
+    
     # If the graph is too large, take a subset
     if len(G) > max_nodes:
         logger.info(f"Graph has {len(G)} nodes, limiting to {max_nodes}")
+        # Ensure start_url is kept if it exists
+        nodes_to_keep = [start_url] if start_url and start_url in G.nodes() else []
+        
         # Get the largest connected component
         largest_cc = max(nx.weakly_connected_components(G), key=len)
-        if len(largest_cc) > max_nodes:
-            # Take the first max_nodes nodes from the largest component
-            nodes_to_keep = list(largest_cc)[:max_nodes]
+        
+        # If start_url is in this component, prioritize nodes from it
+        if start_url in largest_cc:
+            # Get nodes from largest component, prioritizing those connected to start_url
+            remainder = list(largest_cc - {start_url})
+            nodes_to_keep.extend(remainder[:max_nodes - len(nodes_to_keep)])
         else:
             # Take all nodes from the largest component and some additional nodes
-            nodes_to_keep = list(largest_cc)
-            remaining_nodes = list(set(G.nodes()) - set(nodes_to_keep))
+            remaining_nodes = list(largest_cc)
             nodes_to_keep.extend(remaining_nodes[:max_nodes - len(nodes_to_keep)])
+            
+            # If we still have room and start_url wasn't in the component, add it back
+            if len(nodes_to_keep) < max_nodes and start_url not in nodes_to_keep and start_url in G.nodes():
+                nodes_to_keep.append(start_url)
         
         G = G.subgraph(nodes_to_keep).copy()
     
@@ -121,14 +162,29 @@ def generate_crawl_graph(crawl_data_path, output_file=None, max_nodes=100, title
     if title:
         plt.title(title)
     else:
-        start_url = metadata.get("start_url", "Unknown")
-        plt.title(f"Web Crawl Graph - Starting URL: {start_url}")
+        root_url = start_url or next(iter(crawled_urls.keys()), "Unknown")
+        plt.title(f"Web Crawl Graph - {root_url}")
     
     # Draw the graph
     pos = nx.spring_layout(G, seed=42)  # For reproducibility
     
-    # Draw the nodes
-    nx.draw_networkx_nodes(G, pos, node_size=node_size, node_color=node_colors, alpha=0.8)
+    # Highlight the start URL if it exists in the graph
+    if start_url and start_url in G.nodes():
+        nx.draw_networkx_nodes(G, pos, nodelist=[start_url], node_size=node_size*1.5, 
+                               node_color='red', alpha=0.8)
+        remaining_nodes = [node for node in G.nodes() if node != start_url]
+        if remaining_nodes:
+            if isinstance(node_colors, list):
+                remaining_colors = [c for i, c in enumerate(node_colors) 
+                                   if list(G.nodes())[i] != start_url]
+                nx.draw_networkx_nodes(G, pos, nodelist=remaining_nodes, 
+                                      node_size=node_size, node_color=remaining_colors, alpha=0.8)
+            else:
+                nx.draw_networkx_nodes(G, pos, nodelist=remaining_nodes, 
+                                      node_size=node_size, node_color=node_colors, alpha=0.8)
+    else:
+        # Draw all nodes with the same style if no start_url
+        nx.draw_networkx_nodes(G, pos, node_size=node_size, node_color=node_colors, alpha=0.8)
     
     # Draw the edges
     nx.draw_networkx_edges(G, pos, alpha=0.5, arrows=True, edge_color=edge_color)
@@ -140,7 +196,11 @@ def generate_crawl_graph(crawl_data_path, output_file=None, max_nodes=100, title
         for url in G.nodes():
             parsed = urlparse(url)
             path = parsed.path[:20] + "..." if len(parsed.path) > 20 else parsed.path
-            labels[url] = f"{parsed.netloc}{path}"
+            if url == start_url:
+                # Make the start URL label more noticeable
+                labels[url] = f"{parsed.netloc}{path} (START)"
+            else:
+                labels[url] = f"{parsed.netloc}{path}"
         
         nx.draw_networkx_labels(G, pos, labels=labels, font_size=8)
     

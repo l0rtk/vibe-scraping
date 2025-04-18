@@ -183,13 +183,15 @@ class WebCrawler:
             "last_crawl": None,
             "crawled_urls": {},
             "url_frontier": [],
-            "pages_crawled": 0
+            "pages_crawled": 0,
+            "start_url": self.start_url
         }
     
     def _update_metadata(self):
         """Update and save metadata after crawling."""
         self.metadata["last_crawl"] = datetime.now().isoformat()
         self.metadata["pages_crawled"] = len(self.metadata["crawled_urls"])
+        self.metadata["start_url"] = self.start_url
         
         with open(self.metadata_file, 'w') as f:
             json.dump(self.metadata, f, indent=2)
