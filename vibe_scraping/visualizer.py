@@ -378,27 +378,205 @@ def create_dynamic_graph(crawl_data_path, output_file=None):
     if not output_file:
         output_file = os.path.join(crawl_data_path, "interactive_graph.html")
     
-    # Create a network
-    net = Network(height="750px", width="100%", directed=True, notebook=False)
+    # Get the start URL from metadata
+    start_url = metadata.get("start_url")
+    if not start_url and "crawl_stats" in metadata and "start_url" in metadata["crawl_stats"]:
+        start_url = metadata["crawl_stats"]["start_url"]
     
-    # Add nodes
+    # Create a network with appropriate settings for a directed graph
+    net = Network(
+        height="750px", 
+        width="100%", 
+        directed=True, 
+        notebook=False, 
+        cdn_resources="remote",
+        heading=f"Web Crawl Graph - {start_url}"
+    )
+    
+    # Add custom options for better visualization
+    net.set_options("""
+    {
+      "nodes": {
+        "font": {
+          "size": 12,
+          "face": "Arial"
+        },
+        "shape": "dot",
+        "borderWidth": 1,
+        "borderWidthSelected": 3,
+        "scaling": {
+          "min": 10,
+          "max": 30
+        }
+      },
+      "edges": {
+        "color": {
+          "color": "#1976D2",
+          "highlight": "#03A9F4"
+        },
+        "smooth": {
+          "type": "continuous",
+          "forceDirection": "none"
+        },
+        "arrows": {
+          "to": {
+            "enabled": true,
+            "scaleFactor": 0.5
+          }
+        }
+      },
+      "physics": {
+        "solver": "forceAtlas2Based",
+        "forceAtlas2Based": {
+          "gravitationalConstant": -50,
+          "centralGravity": 0.01,
+          "springLength": 100,
+          "springConstant": 0.08
+        },
+        "minVelocity": 0.75,
+        "solver": "hierarchicalRepulsion",
+        "hierarchicalRepulsion": {
+          "centralGravity": 0.1,
+          "springLength": 100,
+          "springConstant": 0.05,
+          "nodeDistance": 120
+        }
+      },
+      "interaction": {
+        "navigationButtons": true,
+        "hover": true
+      }
+    }
+    """)
+    
+    # URL depth tracking
+    url_depths = {}
+    
+    # Process crawled URLs to get depth information
+    for url, data in crawled_urls.items():
+        url_depths[url] = data.get('depth', float('inf'))
+    
+    # Add nodes to the network
     for url, data in crawled_urls.items():
         parsed = urlparse(url)
         domain = parsed.netloc
-        title = f"{url}\nDepth: {data.get('depth', 'unknown')}"
+        path = parsed.path[:25] + "..." if len(parsed.path) > 25 else parsed.path
+        depth = data.get('depth', 'unknown')
         
-        # Add the node with domain-based color and hover information
-        net.add_node(url, title=title, label=domain)
+        label = f"{domain}{path}"
+        title = f"{url}<br>Depth: {depth}"
+        
+        # Special formatting for the start URL
+        if url == start_url:
+            net.add_node(
+                url, 
+                title=title, 
+                label="START: " + label, 
+                color="#E53935",  # Red
+                size=30,
+                borderWidth=3,
+                font={"size": 14, "bold": True}
+            )
+        else:
+            # Color nodes based on depth if available
+            if isinstance(depth, (int, float)) and depth != float('inf'):
+                # Gradient from blue (depth 1) to green (deeper)
+                colors = ["#2196F3", "#03A9F4", "#00BCD4", "#009688", "#4CAF50", "#8BC34A"]
+                color = colors[min(depth, len(colors)-1)]
+                net.add_node(
+                    url, 
+                    title=title, 
+                    label=label, 
+                    color=color,
+                    size=25 - (depth * 2) if isinstance(depth, (int, float)) else 20  # Size decreases with depth
+                )
+            else:
+                net.add_node(url, title=title, label=label)
     
-    # Add edges
+    # First, add all explicit edges from the metadata
     for url, data in crawled_urls.items():
         if "links" in data:
             for link in data["links"]:
                 if link in crawled_urls:  # Only add edges to URLs that were crawled
-                    net.add_edge(url, link)
+                    net.add_edge(url, link, title=f"From: {url}<br>To: {link}")
     
-    # Set physics layout options
-    net.barnes_hut(spring_length=200)
+    # Now make sure all nodes are connected to the graph
+    all_nodes = set(crawled_urls.keys())
+    
+    # Check if start_url is in crawled_urls
+    start_url_in_data = start_url and start_url in crawled_urls
+    
+    # Find nodes that don't have any incoming edges
+    orphan_nodes = set()
+    connected_nodes = set()
+    
+    # Check the connections in the network
+    for edge in net.get_edges():
+        connected_nodes.add(edge['to'])
+    
+    # Find nodes without incoming connections (except start_url)
+    for node in all_nodes:
+        if node != start_url and node not in connected_nodes:
+            orphan_nodes.add(node)
+    
+    # Connect orphan nodes to the start_url or to their most likely parent
+    if start_url_in_data:
+        for node in orphan_nodes:
+            # Try to find the most logical parent based on depth
+            node_depth = url_depths.get(node, float('inf'))
+            
+            if node_depth == 1:  # Depth 1 nodes should connect directly to start_url
+                net.add_edge(
+                    start_url, 
+                    node, 
+                    title=f"Inferred connection from start URL",
+                    dashes=True,  # Use dashed line for inferred connections
+                    color={"color": "#9E9E9E", "opacity": 0.6}  # Lighter gray color
+                )
+            else:
+                # Try to find a parent node with depth one less than this node
+                potential_parents = [
+                    url for url, depth in url_depths.items() 
+                    if depth == node_depth - 1 and url != node
+                ]
+                
+                if potential_parents:
+                    # Choose the first potential parent
+                    parent = potential_parents[0]
+                    net.add_edge(
+                        parent, 
+                        node, 
+                        title=f"Inferred connection based on depth",
+                        dashes=True,
+                        color={"color": "#9E9E9E", "opacity": 0.6}
+                    )
+                else:
+                    # If no logical parent found, connect to start_url if it exists in the data
+                    net.add_edge(
+                        start_url, 
+                        node, 
+                        title=f"Inferred connection from start URL",
+                        dashes=True,
+                        color={"color": "#9E9E9E", "opacity": 0.6}
+                    )
+    elif orphan_nodes and all_nodes:
+        # If start_url is not in the data but we have orphan nodes,
+        # connect them to the first node in url_depths with the lowest depth
+        if url_depths:
+            min_depth = min(url_depths.values())
+            potential_roots = [url for url, depth in url_depths.items() if depth == min_depth]
+            
+            if potential_roots:
+                root_node = potential_roots[0]
+                for node in orphan_nodes:
+                    if node != root_node:
+                        net.add_edge(
+                            root_node, 
+                            node, 
+                            title=f"Inferred connection from root node",
+                            dashes=True,
+                            color={"color": "#9E9E9E", "opacity": 0.6}
+                        )
     
     # Save the visualization
     net.save_graph(output_file)
