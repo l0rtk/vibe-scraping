@@ -9,7 +9,7 @@ Welcome to the Vibe Scraping documentation. This package provides tools for scra
 pip install vibe-scraping
 
 # From source
-git clone https://github.com/yourusername/vibe-scraping.git
+git clone https://github.com/l0rtk/vibe-scraping.git
 cd vibe-scraping
 pip install -e .
 

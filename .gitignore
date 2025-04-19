@@ -196,3 +196,8 @@ interactive_graph.html
 *_graph.png
 *_graph.html
 crawled_data/*/visualizations/
+
+# Data files
+data/crawl_data/
+data/analysis/
+data/analysis/html_analysis_results.json

@@ -11,7 +11,7 @@ setup(
     description="A library for scraping product information from websites using Groq API",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/vibe-scraping",
+    url="https://github.com/l0rtk/vibe-scraping",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
