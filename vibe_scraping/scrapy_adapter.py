@@ -186,13 +186,6 @@ if SCRAPY_AVAILABLE:
             with open(os.path.join(page_dir, "page.html"), 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            # Extract text content (simplified)
-            text_content = ' '.join(response.xpath('//body//text()').getall())
-            
-            # Save text content
-            with open(os.path.join(page_dir, "text.txt"), 'w', encoding='utf-8') as f:
-                f.write(text_content)
-            
             # Extract links
             links = [link for link in response.css('a::attr(href)').getall()]
             
@@ -202,7 +195,6 @@ if SCRAPY_AVAILABLE:
                 "crawl_time": datetime.now().isoformat(),
                 "depth": depth,
                 "links": links,
-                "text_length": len(text_content),
                 "html_length": len(html_content)
             }
             
@@ -215,7 +207,7 @@ if SCRAPY_AVAILABLE:
                 "depth": depth,
                 "hash": url_hash,
                 "links": links,
-                "text_length": len(text_content)
+                "html_length": len(html_content)
             }
             
             # Save metadata after each page
@@ -237,7 +229,7 @@ if SCRAPY_AVAILABLE:
                 "url": url,
                 "depth": depth,
                 "links": links,
-                "text_length": len(text_content)
+                "html_length": len(html_content)
             }
             
         def closed(self, reason):
