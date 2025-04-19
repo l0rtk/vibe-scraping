@@ -114,6 +114,10 @@ if SCRAPY_AVAILABLE:
                 'max_depth': self.max_depth
             }
             
+            # Make sure crawled_urls exists in metadata
+            if "crawled_urls" not in self.metadata:
+                self.metadata["crawled_urls"] = {}
+                
             # Initialize CrawlSpider
             super(VibeCrawlSpider, self).__init__(*args, **kwargs)
         
@@ -141,8 +145,25 @@ if SCRAPY_AVAILABLE:
             self.metadata["pages_crawled"] = len(self.metadata["crawled_urls"])
             self.metadata["start_url"] = self.start_url
             
+            # Make sure crawl_stats exists in metadata
+            if "crawl_stats" not in self.metadata:
+                self.metadata["crawl_stats"] = {}
+                
+            # Update crawl stats
+            self.metadata["crawl_stats"]["pages_crawled"] = self.stats['pages_crawled']
+            self.metadata["crawl_stats"]["start_time"] = time.time() - (self.stats.get('elapsed_time_seconds', 0))
+            self.metadata["crawl_stats"]["end_time"] = time.time()
+            self.metadata["crawl_stats"]["duration"] = self.stats.get('elapsed_time_seconds', 0)
+            self.metadata["crawl_stats"]["max_depth"] = self.max_depth
+            self.metadata["crawl_stats"]["max_pages"] = self.crawler.settings.getint('CLOSESPIDER_PAGECOUNT')
+            
+            # Save to file
             with open(self.metadata_file, 'w') as f:
                 json.dump(self.metadata, f, indent=2)
+        
+        def parse_start_url(self, response):
+            """Process the start URL."""
+            return self.parse_item(response, depth=0)
         
         def process_links(self, links):
             """Process links to normalize URLs and apply depth limiting."""
@@ -215,7 +236,7 @@ if SCRAPY_AVAILABLE:
             with open(os.path.join(page_dir, "metadata.json"), 'w', encoding='utf-8') as f:
                 json.dump(page_metadata, f, indent=2)
             
-            # Update global metadata
+            # Update global metadata - always include in crawled_urls
             self.metadata["crawled_urls"][url] = {
                 "last_visit": datetime.now().isoformat(),
                 "depth": depth,
@@ -223,6 +244,17 @@ if SCRAPY_AVAILABLE:
                 "links": links,
                 "text_length": len(text_content)
             }
+            
+            # Save metadata after each page
+            try:
+                # Use a temporary file to avoid corruption if interrupted
+                temp_metadata_file = f"{self.metadata_file}.tmp"
+                with open(temp_metadata_file, 'w') as f:
+                    json.dump(self.metadata, f, indent=2)
+                # Then rename to the actual file
+                os.replace(temp_metadata_file, self.metadata_file)
+            except Exception as e:
+                logger.error(f"Error saving metadata: {e}")
             
             # Update statistics
             self.stats['pages_crawled'] += 1
@@ -267,7 +299,7 @@ def crawl_with_scrapy(
     save_path, 
     max_depth=2, 
     max_pages=100, 
-    follow_external_links=False,  # This parameter needs to be understood by the function
+    follow_external_links=False,
     respect_robots_txt=True,
     user_agent=None,
     delay=0.0,
@@ -294,8 +326,7 @@ def crawl_with_scrapy(
         graph_type: Type of graph to generate (page, domain, interactive, or tree)
         
     Returns:
-        int: Number of pages crawled
-        str: Path to the graph file if generated
+        dict: Statistics about the crawl including pages_crawled and graph_file path
     """
     if not SCRAPY_AVAILABLE:
         logger.error("Scrapy is not installed. Please install it with: pip install scrapy")
@@ -351,7 +382,7 @@ def crawl_with_scrapy(
             "error": str(e)
         }
     
-    # Load metadata to update with more detailed statistics
+    # Load metadata
     metadata_file = os.path.join(save_path, "metadata.json")
     try:
         with open(metadata_file, 'r') as f:
@@ -363,16 +394,77 @@ def crawl_with_scrapy(
             "start_url": start_url
         }
     
-    # Add or update detailed crawl statistics in metadata
+    # Find all URL files in the save directory to recover any missed URLs
+    url_hashes = {}
+    for entry in os.listdir(save_path):
+        entry_path = os.path.join(save_path, entry)
+        if os.path.isdir(entry_path):
+            # This might be a URL directory
+            meta_file = os.path.join(entry_path, "metadata.json")
+            if os.path.exists(meta_file):
+                try:
+                    with open(meta_file, 'r') as f:
+                        page_meta = json.load(f)
+                        url = page_meta.get("url")
+                        if url:
+                            url_hashes[url] = entry  # Map URL to hash directory
+                except Exception as e:
+                    logger.warning(f"Error loading page metadata: {str(e)}")
+    
+    # Add missing URLs to metadata
+    pages_crawled = stats.get("pages_crawled", 0)
+    existing_urls = set(metadata.get("crawled_urls", {}).keys())
+    missing_urls = set(url_hashes.keys()) - existing_urls
+    
+    # Ensure crawled_urls exists in metadata
+    if "crawled_urls" not in metadata:
+        metadata["crawled_urls"] = {}
+    
+    # Add any missing URLs to metadata
+    for url in missing_urls:
+        url_hash = url_hashes[url]
+        meta_file = os.path.join(save_path, url_hash, "metadata.json")
+        try:
+            with open(meta_file, 'r') as f:
+                page_meta = json.load(f)
+                metadata["crawled_urls"][url] = {
+                    "last_visit": page_meta.get("crawl_time", datetime.now().isoformat()),
+                    "depth": page_meta.get("depth", 0),
+                    "hash": url_hash,
+                    "links": page_meta.get("links", []),
+                    "text_length": page_meta.get("text_length", 0)
+                }
+        except Exception as e:
+            logger.warning(f"Error adding URL to metadata: {str(e)}")
+            # Add a minimal entry
+            metadata["crawled_urls"][url] = {
+                "last_visit": datetime.now().isoformat(),
+                "depth": 0,
+                "hash": url_hash,
+                "links": [],
+                "text_length": 0
+            }
+    
+    # Update crawl_stats in metadata
     if "crawl_stats" not in metadata:
         metadata["crawl_stats"] = {}
     
-    # Update with detailed stats
+    # Determine the actual number of pages crawled
+    urls_in_metadata = len(metadata.get("crawled_urls", {}))
+    
+    # Use the higher count between stats and metadata
+    final_count = max(pages_crawled, urls_in_metadata)
+    
+    # If there's a significant discrepancy, log it
+    if abs(pages_crawled - urls_in_metadata) > 1:
+        logger.warning(f"Scrapy counted {pages_crawled} pages but metadata has {urls_in_metadata} URLs")
+    
+    # Update the crawl_stats in metadata
     metadata["crawl_stats"].update({
         "start_url": start_url,
         "max_depth": max_depth,
         "max_pages": max_pages,
-        "pages_crawled": len(metadata.get("crawled_urls", {})),
+        "pages_crawled": final_count,
         "start_time": start_time,
         "end_time": end_time,
         "duration": duration,

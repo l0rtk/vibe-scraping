@@ -689,7 +689,16 @@ def create_tree_visualization(crawl_data_path, output_file=None):
     tree_data = {"id": start_url, "name": _get_display_name(start_url), "children": []}
     
     # Process immediate children of the start URL
-    def build_tree(node_id, tree_node, current_depth=0, max_depth=5, visited=None):
+    def build_tree(node_id, tree_node, current_depth=0, max_depth=2, visited=None):
+        """Build a tree structure recursively from the graph, limiting to actual crawled pages.
+        
+        Args:
+            node_id: The current URL to process
+            tree_node: The tree node object to populate
+            current_depth: Current depth in the tree
+            max_depth: Maximum depth to explore
+            visited: Set of already visited URLs
+        """
         if current_depth >= max_depth:
             return
             
@@ -700,31 +709,42 @@ def create_tree_visualization(crawl_data_path, output_file=None):
             return
             
         visited.add(node_id)
-            
-        # Get successors from the graph
-        children = list(G.successors(node_id))
-        for child in children:
-            # Skip if this would create a cycle
-            if child in visited:
-                continue
-                
-            # Only add nodes that were actually crawled
+        
+        # Get direct successors from the graph that were actually crawled
+        crawled_children = []
+        for child in G.successors(node_id):
+            if child in crawled_urls and child not in visited:
+                crawled_children.append(child)
+        
+        # Sort children by depth to maintain visual order
+        crawled_children.sort(key=lambda x: crawled_urls.get(x, {}).get('depth', 999))
+        
+        # Limit children to reasonable number for visualization (max 10 per node)
+        if len(crawled_children) > 10:
+            crawled_children = crawled_children[:10]
+            # Add a note about hidden children
+            hidden_count = len(list(G.successors(node_id))) - 10
+            if hidden_count > 0:
+                tree_node["more_children"] = hidden_count
+        
+        # Add each crawled child to the tree
+        for child in crawled_children:
+            # Only include actual crawled nodes
             if child in crawled_urls:
-                # Check if the depth of this child makes sense in relation to parent
-                parent_depth = crawled_urls.get(node_id, {}).get('depth', 0)
-                child_depth = crawled_urls.get(child, {}).get('depth', 999)
+                # Get depth information
+                child_depth = crawled_urls.get(child, {}).get('depth', 0)
                 
-                # Only add if child's depth is one more than parent's depth
-                # or if parent is start_url and child has depth 1
-                if (child_depth == parent_depth + 1) or (node_id == start_url and child_depth == 1):
-                    child_node = {
-                        "id": child,
-                        "name": _get_display_name(child),
-                        "depth": child_depth,
-                        "children": []
-                    }
-                    tree_node["children"].append(child_node)
-                    build_tree(child, child_node, current_depth + 1, max_depth, visited.copy())
+                # Create the child node
+                child_node = {
+                    "id": child,
+                    "name": _get_display_name(child),
+                    "depth": child_depth,
+                    "children": []
+                }
+                tree_node["children"].append(child_node)
+                
+                # Recursively process this child's children
+                build_tree(child, child_node, current_depth + 1, max_depth, visited.copy())
     
     # Start building the tree from the root
     build_tree(start_url, tree_data)
@@ -770,13 +790,44 @@ def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages
     """Create HTML for the tree visualization using D3.js."""
     from datetime import datetime
     
-    # Initialize stats object with default values
+    # Function to count nodes in tree accurately
+    def count_nodes_in_tree(node):
+        """Count unique nodes in the tree, avoiding duplicates."""
+        if not node:
+            return 0, set()
+            
+        # Track unique IDs to avoid double-counting
+        unique_ids = set()
+        if "id" in node:
+            unique_ids.add(node["id"])
+            
+        # Count children recursively
+        for child in node.get("children", []):
+            _, child_ids = count_nodes_in_tree(child)
+            unique_ids.update(child_ids)
+            
+        return len(unique_ids), unique_ids
+    
+    # Get actual count of unique nodes in tree
+    tree_node_count, unique_node_ids = count_nodes_in_tree(tree_data)
+    
+    # Calculate stats based on the tree and crawl_stats
+    # For pages crawled, use actual crawl stats if available
+    pages_crawled = crawl_stats.get('pages_crawled', num_pages) 
+    if not pages_crawled and num_pages:
+        pages_crawled = num_pages
+    elif not pages_crawled and tree_node_count:
+        pages_crawled = tree_node_count
+    
+    # Create stats dictionary with actual values
     stats = {
-        'pages_crawled': num_pages or len(tree_data.get("children", [])) + 1,  # Use num_pages if provided, otherwise count nodes
+        'pages_crawled': pages_crawled,
         'max_depth': crawl_stats.get('max_depth', 0),
-        'domains': 1,  # Default to at least the start domain
+        'domains': crawl_stats.get('domains_count', 1),
         'start_time': 'Unknown',
-        'duration': 'Unknown'
+        'duration': 'Unknown',
+        'visible_nodes': tree_node_count,
+        'total_nodes': len(unique_node_ids) if unique_node_ids else tree_node_count
     }
     
     # Process start_time from crawl_stats if available
@@ -1016,11 +1067,11 @@ def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages
             </div>
             <div class="stats-row">
                 <span class="stats-label">Visible Nodes:</span>
-                <span class="stats-value" id="visible-nodes">-</span>
+                <span class="stats-value">{{ stats.visible_nodes }}</span>
             </div>
             <div class="stats-row">
                 <span class="stats-label">Total Nodes:</span>
-                <span class="stats-value" id="total-nodes">-</span>
+                <span class="stats-value">{{ stats.total_nodes }}</span>
             </div>
         </div>
         
@@ -1102,26 +1153,6 @@ def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages
             }
         });
         
-        // Update node counts in stats panel
-        function updateNodeCounts() {
-            const totalNodes = root.descendants().length;
-            document.getElementById('total-nodes').textContent = totalNodes;
-            
-            // Count visible nodes (not collapsed)
-            const visibleNodes = countVisibleNodes(root);
-            document.getElementById('visible-nodes').textContent = visibleNodes;
-        }
-        
-        function countVisibleNodes(node) {
-            let count = 1; // Count this node
-            if (node.children) {
-                node.children.forEach(child => {
-                    count += countVisibleNodes(child);
-                });
-            }
-            return count;
-        }
-        
         // Main update function
         function update(source) {
             // Create tree layout
@@ -1181,6 +1212,16 @@ def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages
                 .style("fill", d => d._children ? "#e8e8e8" : "#fff")
                 .style("stroke", d => getNodeColor(d.depth));
                 
+            // Add a label for the node count if it has more children
+            nodeEnter.append("text")
+                .attr("dy", -10)
+                .attr("dx", 8)
+                .style("text-anchor", "middle")
+                .style("font-size", "10px")
+                .style("fill", "#666")
+                .text(d => d.data.more_children ? `+${d.data.more_children} more` : "")
+                .style("pointer-events", "none");
+                
             // Update the nodes
             const nodeUpdate = nodeEnter.merge(node);
             
@@ -1193,9 +1234,12 @@ def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages
             nodeUpdate.select("circle")
                 .attr("r", 6)
                 .style("fill", d => d._children ? "#e8e8e8" : "#fff")
-                .style("stroke", d => getNodeColor(d.depth));
+                .style("stroke", d => getNodeColor(d.depth))
+                .attr("class", d => d._children ? "has-children" : "");
                 
-            // We removed the text labels, so no need to update them
+            // Update the "more children" label
+            nodeUpdate.select("text")
+                .text(d => d.data.more_children ? `+${d.data.more_children} more` : "");
                 
             // Remove exiting nodes
             const nodeExit = node.exit()
@@ -1254,9 +1298,6 @@ def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages
                     ${d.x} ${d.y}`;
                 return path;
             }
-            
-            // Update node counts in stats panel
-            updateNodeCounts();
         }
         
         // Center the tree
