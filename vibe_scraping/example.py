@@ -1,169 +1,98 @@
 #!/usr/bin/env python3
 """
-Example usage of the product scraping library.
-This script shows how to use the library for multiple product pages.
+Example usage of the deep web crawling functionality.
+This script demonstrates how to use the library for deep crawling with Scrapy.
 """
-from main import process_product_page, scrape_webpage, extract_product_info, calculate_cost
-import json
+
 import argparse
+import os
+from vibe_scraping.crawler import WebCrawler, crawl_site
+from vibe_scraping import SCRAPY_AVAILABLE
 
-def save_product_info(url, output_file="product_info.json", custom_prompt=None, use_selenium=False):
-    """Process a product page and save the result to a JSON file."""
-    print(f"Processing {url}...")
-    product_info, cost_info = process_product_page(url, custom_prompt=custom_prompt, use_selenium_fallback=use_selenium)
+def crawl_website(url, output_dir="crawled_data", max_depth=5, max_pages=1000, delay=0.1):
+    """
+    Crawl a website deeply using Scrapy and save the results.
     
-    # Create a dictionary with all the information
-    result = {
-        "url": url,
-        "product_info": product_info["content"] if product_info else "Failed to retrieve content",
-        "token_usage": product_info["usage"] if product_info else None,
-        "cost": cost_info if cost_info and cost_info["has_pricing"] else "Not available",
-        "used_selenium": use_selenium
-    }
-    
-    # Save to JSON file
-    with open(output_file, 'w') as f:
-        json.dump(result, f, indent=2)
-    
-    print(f"Saved information to {output_file}")
-    return result
-
-def compare_multiple_products(urls, use_selenium=False):
-    """Process multiple product pages and extract their information."""
-    results = []
-    
-    for url in urls:
-        print(f"Processing {url}...")
-        text = scrape_webpage(url, use_selenium_fallback=use_selenium)
-        if not text:
-            print(f"Failed to retrieve {url}")
-            continue
-            
-        # Extract product info
-        product_info = extract_product_info(text)
+    Args:
+        url: The website URL to start crawling from
+        output_dir: Directory to save the crawled data
+        max_depth: Maximum depth to crawl
+        max_pages: Maximum number of pages to crawl
+        delay: Delay between requests in seconds
         
-        # Calculate cost
-        cost_info = calculate_cost(product_info["usage"], "meta-llama/llama-4-scout-17b-16e-instruct")
+    Returns:
+        Dict with crawl statistics
+    """
+    if not SCRAPY_AVAILABLE:
+        print("Scrapy is not installed. Please install with: pip install scrapy")
+        return None
         
-        results.append({
-            "url": url,
-            "info": product_info["content"],
-            "cost": cost_info["total_cost"] if cost_info["has_pricing"] else "N/A",
-            "used_selenium": use_selenium
-        })
+    print(f"Starting deep crawl of {url}")
+    print(f"Max depth: {max_depth}, Max pages: {max_pages}")
+    print(f"Output directory: {output_dir}")
     
-    return results
-
-def compare_with_different_prompts(url, use_selenium=False):
-    """Compare results using different prompts on the same product page."""
-    print(f"Analyzing {url} with different prompts...")
+    # Make sure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
     
-    prompts = [
-        "Extract only the technical specifications and features from",
-        "Extract only the price and availability information from",
-        "Provide a brief summary of the product from",
-        "List all accessories and compatible products mentioned in"
-    ]
-    
-    results = []
-    for prompt in prompts:
-        print(f"\nUsing prompt: '{prompt}'")
-        product_info, cost_info = process_product_page(
-            url, 
-            custom_prompt=prompt, 
-            use_selenium_fallback=use_selenium
-        )
-        
-        if not product_info:
-            print(f"Failed to process with prompt: {prompt}")
-            continue
-            
-        results.append({
-            "prompt": prompt,
-            "result": product_info["content"],
-            "tokens": product_info["usage"]["total_tokens"],
-            "cost": cost_info["total_cost"] if cost_info["has_pricing"] else "N/A",
-            "used_selenium": use_selenium
-        })
-    
-    return results
-
-def compare_regular_vs_selenium(url, prompt=None):
-    """Compare results between regular scraping and Selenium-based scraping."""
-    print(f"Comparing regular requests vs Selenium for {url}...")
-    
-    # Get results with regular requests
-    print("\nUsing regular requests:")
-    regular_product_info, regular_cost_info = process_product_page(
-        url, 
-        custom_prompt=prompt, 
-        use_selenium_fallback=False
+    # Create a crawler instance
+    crawler = WebCrawler(
+        start_url=url,
+        max_depth=max_depth,
+        max_pages=max_pages,
+        follow_external_links=False,  # Stay on the same domain
+        respect_robots_txt=True,      # Respect robots.txt
+        delay=delay,                  # Reasonable delay between requests
+        save_path=output_dir
     )
     
-    # Get results with Selenium
-    print("\nUsing Selenium:")
-    try:
-        selenium_product_info, selenium_cost_info = process_product_page(
-            url, 
-            custom_prompt=prompt, 
-            use_selenium_fallback=True
-        )
+    # Start the crawl
+    result = crawler.crawl()
+    
+    # Print results
+    if isinstance(result, dict):
+        pages_crawled = result.get('pages_crawled', 0)
+    else:
+        pages_crawled = result
         
-        # Create comparison result
-        comparison = {
-            "url": url,
-            "prompt": prompt,
-            "regular_result": {
-                "content": regular_product_info["content"] if regular_product_info else "Failed to retrieve",
-                "tokens": regular_product_info["usage"]["total_tokens"] if regular_product_info else 0,
-                "cost": regular_cost_info["total_cost"] if regular_cost_info and regular_cost_info["has_pricing"] else "N/A",
-                "success": regular_product_info is not None
-            },
-            "selenium_result": {
-                "content": selenium_product_info["content"] if selenium_product_info else "Failed to retrieve",
-                "tokens": selenium_product_info["usage"]["total_tokens"] if selenium_product_info else 0,
-                "cost": selenium_cost_info["total_cost"] if selenium_cost_info and selenium_cost_info["has_pricing"] else "N/A",
-                "success": selenium_product_info is not None
-            }
-        }
-        
-        # Save comparison to JSON
-        with open("scraping_method_comparison.json", "w") as f:
-            json.dump(comparison, f, indent=2)
-        
-        print("\nSaved scraping method comparison to scraping_method_comparison.json")
-        return comparison
-    except Exception as e:
-        print(f"Error during Selenium comparison: {e}")
-        print("Selenium comparison failed.")
-        return None
+    print(f"\nCrawl completed!")
+    print(f"Pages crawled: {pages_crawled}")
+    print(f"Data saved to: {output_dir}")
+    
+    return result
+
 
 if __name__ == "__main__":
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Run examples with optional Selenium usage")
-    parser.add_argument("--selenium", action="store_true", help="Use Selenium for scraping")
-    parser.add_argument("--url", default="https://alta.ge/home-appliance/kitchen-appliances/microwaves/toshiba-mm-eg24p-bm-black.html", 
-                       help="URL to scrape (default: Alta.ge microwave product)")
+    parser = argparse.ArgumentParser(description="Deep web crawling with Scrapy")
+    parser.add_argument("--url", default="https://newshub.ge", 
+                       help="URL to start crawling from (default: newshub.ge)")
+    parser.add_argument("--output", default="./crawled_data",
+                       help="Directory to save crawled data (default: ./crawled_data)")
+    parser.add_argument("--depth", type=int, default=5,
+                       help="Maximum crawl depth (default: 5)")
+    parser.add_argument("--pages", type=int, default=1000,
+                       help="Maximum pages to crawl (default: 1000)")
+    parser.add_argument("--delay", type=float, default=0.1,
+                       help="Delay between requests in seconds (default: 0.1)")
     args = parser.parse_args()
     
-    use_selenium = args.selenium
-    scraping_method = "Selenium-assisted" if use_selenium else "standard requests"
-    print(f"Running examples using {scraping_method} for scraping")
+    # Run the crawler
+    result = crawl_website(
+        url=args.url,
+        output_dir=args.output,
+        max_depth=args.depth,
+        max_pages=args.pages,
+        delay=args.delay
+    )
     
-    # Example 1: Process a single product and save to JSON
-    save_product_info(args.url, use_selenium=use_selenium)
-    
-    # Example 2: Compare different prompts on the same product
-    print("\n\nAnalyzing a product with different prompts:")
-    prompt_results = compare_with_different_prompts(args.url, use_selenium=use_selenium)
-    
-    # Save prompt comparison to JSON
-    if prompt_results:
-        with open("prompt_comparison.json", "w") as f:
-            json.dump(prompt_results, f, indent=2)
-        print("\nSaved prompt comparison results to prompt_comparison.json")
-    
-    # Example 3: Compare regular vs Selenium scraping (only if not already using Selenium)
-    if not use_selenium:
-        print("\n\nComparing regular requests vs Selenium scraping:")
-        compare_regular_vs_selenium(args.url, prompt="Extract only the technical specifications from") 
+    # Check if successful
+    if not result:
+        print("\nCrawl failed - please make sure Scrapy is installed.")
+        print("Install with: pip install scrapy")
+    else:
+        print("\nCrawl details:")
+        if isinstance(result, dict):
+            for key, value in result.items():
+                print(f"{key}: {value}")
+        else:
+            print(f"Pages crawled: {result}") 
