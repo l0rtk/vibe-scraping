@@ -994,7 +994,8 @@ def _create_tree_html_template(tree_data, start_url):
                         .style("opacity", .9);
                     tooltip.html(`
                         <strong>URL:</strong> ${d.data.id}<br>
-                        <strong>Depth:</strong> ${d.data.depth || d.depth}
+                        <strong>Depth:</strong> ${d.data.depth || d.depth}<br>
+                        <strong>Name:</strong> ${d.data.name || ""}
                     `)
                     .style("left", (event.pageX + 10) + "px")
                     .style("top", (event.pageY - 28) + "px");
@@ -1015,14 +1016,6 @@ def _create_tree_html_template(tree_data, start_url):
                 .style("fill", d => d._children ? "#e8e8e8" : "#fff")
                 .style("stroke", d => getNodeColor(d.depth));
                 
-            // Add labels for the nodes
-            nodeEnter.append("text")
-                .attr("dy", ".35em")
-                .attr("x", d => d.children || d._children ? -13 : 13)
-                .attr("text-anchor", d => d.children || d._children ? "end" : "start")
-                .text(d => d.data.name)
-                .style("fill-opacity", 0);
-                
             // Update the nodes
             const nodeUpdate = nodeEnter.merge(node);
             
@@ -1037,8 +1030,7 @@ def _create_tree_html_template(tree_data, start_url):
                 .style("fill", d => d._children ? "#e8e8e8" : "#fff")
                 .style("stroke", d => getNodeColor(d.depth));
                 
-            nodeUpdate.select("text")
-                .style("fill-opacity", 1);
+            // We removed the text labels, so no need to update them
                 
             // Remove exiting nodes
             const nodeExit = node.exit()
@@ -1049,9 +1041,6 @@ def _create_tree_html_template(tree_data, start_url):
                 
             nodeExit.select("circle")
                 .attr("r", 0);
-                
-            nodeExit.select("text")
-                .style("fill-opacity", 0);
                 
             // Update the links
             const link = gLink.selectAll(".link")
