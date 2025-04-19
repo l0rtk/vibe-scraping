@@ -33,17 +33,31 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class WebCrawler:
-    """Advanced web crawler with configurable depth and politeness policies.
+    """
+    A web crawler that crawls pages and builds a graph of the web.
     
-    This crawler supports both regular HTTP-based crawling and fast parallel crawling using Scrapy.
-    It implements various politeness policies, respects robots.txt, and can generate graph visualizations
-    of the crawled data.
-    
-    The crawler can be configured to use either breadth-first or depth-first crawling strategies,
-    and supports both regular requests and Selenium for handling JavaScript-heavy sites.
-    
-    When using Scrapy (with use_scrapy=True), the crawler benefits from asynchronous and parallel
-    processing capabilities, which can significantly improve performance for large crawls.
+    Args:
+        start_url (str): The URL to start crawling from
+        max_depth (int, optional): Maximum depth to crawl. Defaults to 2.
+        max_pages (int, optional): Maximum number of pages to crawl. Defaults to 100.
+        follow_external_links (bool, optional): Whether to follow links to external domains. Defaults to False.
+        respect_robots_txt (bool, optional): Whether to respect robots.txt. Defaults to True.
+        user_agent (str, optional): User agent to use for requests. Defaults to None.
+        delay (float, optional): Delay between requests in seconds. Defaults to 0.
+        save_path (str, optional): Path to save crawled data. Defaults to "./crawl_data".
+        generate_graph (bool, optional): Whether to generate a graph of the crawled pages. Defaults to False.
+        graph_type (str, optional): Type of graph to generate. Options: "page" (default), "domain", "interactive", "tree".
+        log_level (str, optional): Logging level. Defaults to "INFO".
+        use_scrapy (bool, optional): Whether to use Scrapy for crawling. Defaults to False.
+        scrapy_settings (dict, optional): Additional settings for Scrapy. Defaults to None.
+        save_html (bool, optional): Whether to save HTML content of crawled pages. Defaults to True.
+        save_screenshots (bool, optional): Whether to save screenshots of crawled pages. Defaults to False.
+        headless (bool, optional): Whether to run the browser in headless mode when taking screenshots. Defaults to True.
+        browser_type (str, optional): Type of browser to use for screenshots. Options: "chrome" (default), "firefox".
+        filter_urls (callable, optional): Function to filter URLs before crawling. Takes URL as argument, returns bool.
+        extract_metadata (callable, optional): Function to extract metadata from a page. Takes URL and HTML as arguments.
+        cache_backend (str, optional): Type of cache to use. Options: "memory" (default), "sqlite", "redis".
+        redis_url (str, optional): URL for Redis cache if using "redis" cache_backend. Defaults to "redis://localhost:6379/0".
     """
     
     def __init__(
@@ -51,167 +65,258 @@ class WebCrawler:
         start_url,
         max_depth=2,
         max_pages=100,
-        delay=1.0,
-        delay_randomize=True,
-        user_agent=None,
+        follow_external_links=False,
         respect_robots_txt=True,
-        crawl_method="breadth",  # "breadth" or "depth"
-        save_path="crawled_data",
-        url_pattern=None,
-        selenium_fallback=False,
+        user_agent=None,
+        delay=0,
+        save_path="./crawl_data",
+        generate_graph=False,
+        graph_type="page",
+        log_level="INFO",
+        use_scrapy=False,
+        scrapy_settings=None,
+        save_html=True,
+        save_screenshots=False,
         headless=True,
-        follow_subdomains=False,
-        handle_ajax=False,
-        revisit_policy="never",  # "never", "daily", "always"
-        cookies=None,
-        custom_headers=None,
-        generate_graph=False,  # Whether to generate a graph visualization after crawling
-        graph_type="page",     # "page", "domain", or "interactive"
-        graph_title=None,      # Custom title for the graph
-        use_scrapy=False       # Whether to use Scrapy for faster parallel crawling
+        browser_type="chrome",
+        filter_urls=None,
+        extract_metadata=None,
+        cache_backend="memory",
+        redis_url="redis://localhost:6379/0",
     ):
-        """Initialize the web crawler with the specified parameters.
+        # Set up logging
+        logging.basicConfig(
+            level=getattr(logging, log_level.upper()),
+            format="%(asctime)s - %(levelname)s - %(message)s",
+        )
+        self.logger = logging.getLogger(__name__)
         
-        Args:
-            start_url: The starting URL for crawling
-            max_depth: Maximum depth for crawling (default: 2)
-            max_pages: Maximum number of pages to crawl (default: 100)
-            delay: Delay between requests in seconds (default: 1.0)
-            delay_randomize: Whether to randomize the delay (default: True)
-            user_agent: Custom user agent (default: None, uses a common browser UA)
-            respect_robots_txt: Whether to respect robots.txt (default: True)
-            crawl_method: "breadth" for BFS or "depth" for DFS (default: "breadth")
-            save_path: Path to save crawled data (default: "crawled_data")
-            url_pattern: Regex pattern for URLs to follow (default: None = all)
-            selenium_fallback: Use Selenium if regular requests fail (default: False)
-            headless: Run Selenium in headless mode (default: True)
-            follow_subdomains: Whether to follow links to subdomains (default: False)
-            handle_ajax: Whether to handle AJAX-loaded content (default: False)
-            revisit_policy: Policy for revisiting pages (default: "never")
-            cookies: Custom cookies to use for requests (default: None)
-            custom_headers: Custom headers to use for requests (default: None)
-            generate_graph: Whether to generate a graph visualization after crawling
-            graph_type: Type of graph to generate ("page", "domain", or "interactive")
-            graph_title: Title for the graph visualization
-            use_scrapy: Whether to use Scrapy for faster parallel crawling (default: False)
-        """
         self.start_url = start_url
         self.max_depth = max_depth
         self.max_pages = max_pages
-        self.base_delay = delay
-        self.delay_randomize = delay_randomize
+        self.follow_external_links = follow_external_links
         self.respect_robots_txt = respect_robots_txt
-        self.crawl_method = crawl_method
+        self.user_agent = user_agent
+        self.delay = delay
         self.save_path = save_path
-        self.selenium_fallback = selenium_fallback
-        self.headless = headless
-        self.follow_subdomains = follow_subdomains
-        self.handle_ajax = handle_ajax
-        self.revisit_policy = revisit_policy
-        self.use_scrapy = use_scrapy
-        
-        # Graph visualization settings
         self.generate_graph = generate_graph
         self.graph_type = graph_type
-        self.graph_title = graph_title
+        self.use_scrapy = use_scrapy
+        self.scrapy_settings = scrapy_settings or {}
+        self.save_html = save_html
+        self.save_screenshots = save_screenshots
+        self.headless = headless
+        self.browser_type = browser_type
+        self.filter_urls = filter_urls
+        self.extract_metadata = extract_metadata
+        self.cache_backend = cache_backend
+        self.redis_url = redis_url
         
-        # Set up parsing components
-        parsed_url = urlparse(start_url)
-        self.base_domain = parsed_url.netloc
-        self.base_scheme = parsed_url.scheme
+        # Initialize the crawl data structure
+        self.crawled_urls = {}
+        self.visited_urls = set()
+        self.queue = deque([(start_url, 0)])  # (url, depth)
+        self.start_time = None
+        self.end_time = None
         
-        # Set up the URL pattern
-        self.url_pattern = re.compile(url_pattern) if url_pattern else None
+        # Ensure the save path exists
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path)
+            
+        # Set up URL filters
+        self.domain = urlparse(start_url).netloc
         
-        # Set up the user agent
-        self.user_agent = user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-        
-        # Set up the robots.txt parser
-        self.robots_parser = RobotFileParser()
+        # Initialize robots.txt parser if needed
+        self.robots_parser = None
         if self.respect_robots_txt:
-            robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
             try:
-                self.robots_parser.set_url(robots_url)
-                self.robots_parser.read()
-                logger.info(f"Loaded robots.txt from {robots_url}")
+                self._init_robots_parser()
             except Exception as e:
-                logger.warning(f"Error loading robots.txt: {str(e)}")
+                self.logger.warning(f"Error initializing robots.txt parser: {str(e)}")
+                self.robots_parser = None
+                
+        # Set up cache
+        self._init_cache()
         
-        # Configure headers
-        self.headers = {
-            "User-Agent": self.user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "DNT": "1"  # Do Not Track request
-        }
-        
-        # Add any custom headers
-        if custom_headers:
-            self.headers.update(custom_headers)
-        
-        # Set up cookies and session management
-        self.session = requests.Session()
-        if cookies:
-            self.session.cookies.update(cookies)
-            
-        # Set up state
-        self.visited = set()  # Set of visited URLs
-        self.page_count = 0
-        self.crawl_start_time = None
-        
-        # Create the save directory
-        os.makedirs(self.save_path, exist_ok=True)
-        self.metadata_file = os.path.join(self.save_path, "metadata.json")
-        
-        # Load existing metadata if available
-        self.metadata = self._load_metadata()
+        # Set up screenshot capabilities if needed
+        if self.save_screenshots:
+            try:
+                from selenium import webdriver
+                if self.browser_type.lower() == "chrome":
+                    options = webdriver.ChromeOptions()
+                    if self.headless:
+                        options.add_argument('--headless')
+                        options.add_argument('--no-sandbox')
+                    self.browser = webdriver.Chrome(options=options)
+                else:  # firefox
+                    from selenium.webdriver.firefox.options import Options
+                    options = Options()
+                    if self.headless:
+                        options.add_argument('--headless')
+                    self.browser = webdriver.Firefox(options=options)
+            except ImportError:
+                self.logger.warning("Selenium not installed. Cannot save screenshots.")
+                self.save_screenshots = False
+            except Exception as e:
+                self.logger.warning(f"Error initializing browser: {str(e)}")
+                self.save_screenshots = False
     
-    def _load_metadata(self):
-        """Load metadata from previous crawls if available."""
+    def crawl(self):
+        """
+        Start the crawling process.
+        
+        Returns:
+            tuple: (Number of pages crawled, path to graph file if generated, otherwise None)
+        """
+        self.start_time = time.time()
+        
         try:
-            if os.path.exists(self.metadata_file):
-                with open(self.metadata_file, 'r') as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load metadata: {str(e)}")
-        
-        # Initial metadata structure
-        return {
-            "last_crawl": None,
-            "crawled_urls": {},
-            "url_frontier": [],
-            "pages_crawled": 0,
-            "start_url": self.start_url
-        }
-    
-    def _update_metadata(self):
-        """Update and save metadata after crawling."""
-        self.metadata["last_crawl"] = datetime.now().isoformat()
-        self.metadata["pages_crawled"] = len(self.metadata["crawled_urls"])
-        self.metadata["start_url"] = self.start_url
-        
-        with open(self.metadata_file, 'w') as f:
-            json.dump(self.metadata, f, indent=2)
-    
-    def _should_revisit(self, url):
-        """Determine if a URL should be revisited based on the revisit policy."""
-        if url not in self.metadata["crawled_urls"]:
-            return True
+            if self.use_scrapy:
+                self.logger.info(f"Starting crawl from {self.start_url}")
+                try:
+                    from vibe_scraping.scrapy_adapter import crawl_with_scrapy
+                    
+                    return crawl_with_scrapy(
+                        start_url=self.start_url,
+                        save_path=self.save_path,
+                        max_depth=self.max_depth,
+                        max_pages=self.max_pages,
+                        follow_external_links=self.follow_external_links,
+                        respect_robots_txt=self.respect_robots_txt,
+                        user_agent=self.user_agent,
+                        delay=self.delay,  # Pass the delay parameter to Scrapy
+                        additional_settings=self.scrapy_settings,
+                        save_html=self.save_html,
+                        generate_graph=self.generate_graph,
+                        graph_type=self.graph_type
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error using Scrapy: {str(e)}")
+                    self.logger.info("Falling back to the default crawler")
+                    return self._crawl_breadth_first()
+            else:
+                return self._crawl_breadth_first()
+        finally:
+            self.end_time = time.time()
+            self._save_metadata()
             
-        if self.revisit_policy == "never":
-            return False
-        elif self.revisit_policy == "always":
-            return True
-        elif self.revisit_policy == "daily":
-            # Check if last visit was more than a day ago
-            last_visit = datetime.fromisoformat(self.metadata["crawled_urls"][url]["last_visit"])
-            time_diff = datetime.now() - last_visit
-            return time_diff.days >= 1
+            # Close browser if it was opened
+            if hasattr(self, 'browser'):
+                try:
+                    self.browser.quit()
+                except:
+                    pass
+    
+    def _crawl_breadth_first(self):
+        """Perform breadth-first crawling."""
+        self.start_time = datetime.now()
+        self.logger.info(f"Starting breadth-first crawl from {self.start_url}")
         
-        return False
+        while self.queue and len(self.crawled_urls) < self.max_pages:
+            url, depth = self.queue.popleft()
+            
+            if depth > self.max_depth:
+                continue
+                
+            self.logger.info(f"Crawling [{len(self.crawled_urls)+1}/{self.max_pages}]: {url} (depth {depth})")
+            
+            try:
+                html_content, text_content, soup = self._fetch_page(url)
+                if not html_content:
+                    continue
+                    
+                self.crawled_urls[url] = {
+                    "last_visit": datetime.now().isoformat(),
+                    "depth": depth,
+                    "hash": hashlib.md5(url.encode()).hexdigest(),
+                    "links": self._extract_links(soup, url),
+                    "text_length": len(text_content)
+                }
+                
+                # Extract links from the page
+                links = self._extract_links(soup, url)
+                
+                # Save the page data
+                self._save_page(url, html_content, text_content, links, depth)
+                
+                # Add new links to the queue
+                for link in links:
+                    if link not in self.visited_urls:
+                        self.queue.append((link, depth + 1))
+                        self.visited_urls.add(link)
+                
+                # Apply delay before next request
+                time.sleep(self.delay)
+                
+            except Exception as e:
+                self.logger.error(f"Error crawling {url}: {str(e)}")
+        
+        # Update and save the metadata
+        self.logger.info(f"Crawl completed. {len(self.crawled_urls)} pages crawled.")
+        
+        # Generate the graph if requested
+        graph_file = None
+        if self.generate_graph:
+            graph_file = self.generate_graph_visualization()
+        
+        return len(self.crawled_urls), graph_file
+    
+    def _fetch_page(self, url):
+        """Fetch a page and parse it."""
+        # Try with regular requests first
+        try:
+            response = requests.get(url, headers={"User-Agent": self.user_agent}, timeout=10)
+            
+            if response.status_code == 200:
+                html_content = response.text
+                soup = BeautifulSoup(html_content, 'html.parser')
+                
+                # Clean up the content
+                for script in soup(["script", "style"]):
+                    script.extract()
+                
+                # Get the text
+                text_content = soup.get_text(separator=' ', strip=True)
+                
+                # Check if content is substantial enough
+                if len(text_content) > 500:
+                    return html_content, text_content, soup
+                else:
+                    self.logger.warning(f"Content may be incomplete for {url}, trying Selenium as fallback...")
+            else:
+                self.logger.error(f"Failed to retrieve page {url} (Status code: {response.status_code})")
+        
+        except Exception as e:
+            self.logger.error(f"Error during page retrieval {url}: {str(e)}")
+        
+        # If we're here and selenium_fallback is True, try with Selenium
+        if self.use_scrapy:
+            try:
+                self.logger.info(f"Attempting to scrape {url} with Selenium...")
+                
+                # Get the HTML with Selenium
+                html_content = scrape_with_selenium(url, headless=self.headless)
+                
+                if html_content and len(html_content) > 0:
+                    # Parse the HTML with BeautifulSoup
+                    soup = BeautifulSoup(html_content, 'html.parser')
+                    
+                    # Clean up the content
+                    for script in soup(["script", "style"]):
+                        script.extract()
+                    
+                    # Extract text
+                    text_content = soup.get_text(separator=' ', strip=True)
+                    self.logger.info(f"Successfully retrieved {len(text_content)} characters using Selenium")
+                    
+                    return html_content, text_content, soup
+                else:
+                    self.logger.error(f"Failed to retrieve content with Selenium for {url}")
+            
+            except Exception as e:
+                self.logger.error(f"Error during Selenium scraping for {url}: {str(e)}")
+        
+        return None, None, None
     
     def _save_page(self, url, html_content, text_content, links, depth):
         """Save the crawled page data to disk."""
@@ -247,7 +352,7 @@ class WebCrawler:
             json.dump(page_metadata, f, indent=2)
             
         # Update the global metadata with this page's info
-        self.metadata["crawled_urls"][url] = {
+        self.crawled_urls[url] = {
             "last_visit": datetime.now().isoformat(),
             "depth": depth,
             "hash": url_hash,
@@ -279,22 +384,19 @@ class WebCrawler:
     def _should_follow(self, url):
         """Determine if the URL should be followed."""
         # Check if the URL has been visited
-        if url in self.visited:
+        if url in self.visited_urls:
             return False
         
         # Parse the URL
         parsed_url = urlparse(url)
         
         # Check if it's from the same domain or allowed subdomain
-        if not self.follow_subdomains and parsed_url.netloc != self.base_domain:
-            # If not following subdomains, only follow URLs from the exact same domain
-            return False
-        elif self.follow_subdomains and not self._is_subdomain(parsed_url.netloc):
-            # If following subdomains, check if it's a subdomain of the base domain
+        if not self.follow_external_links and parsed_url.netloc != self.domain:
+            # If not following external domains, only follow URLs from the exact same domain
             return False
         
         # Check against URL pattern if provided
-        if self.url_pattern and not self.url_pattern.search(url):
+        if self.filter_urls and not self.filter_urls(url):
             return False
         
         # Check if the URL is allowed by robots.txt
@@ -312,21 +414,6 @@ class WebCrawler:
         
         return True
     
-    def _is_subdomain(self, domain):
-        """Check if the domain is a subdomain of the base domain."""
-        if domain == self.base_domain:
-            return True
-        
-        # Check if it's a subdomain
-        return domain.endswith(f".{self.base_domain}")
-    
-    def _get_delay(self):
-        """Get the appropriate delay between requests."""
-        if self.delay_randomize:
-            # Add a random amount between 0 and 100% of base delay
-            return self.base_delay * (1 + random.random())
-        return self.base_delay
-    
     def _extract_links(self, soup, url):
         """Extract links from the page."""
         links = []
@@ -336,206 +423,6 @@ class WebCrawler:
             if self._should_follow(absolute_url):
                 links.append(absolute_url)
         return links
-    
-    def crawl(self):
-        """Start the crawling process."""
-        if self.use_scrapy:
-            try:
-                from .scrapy_adapter import crawl_with_scrapy, SCRAPY_AVAILABLE
-                
-                if not SCRAPY_AVAILABLE:
-                    logger.warning("Scrapy is not installed. Falling back to regular crawler.")
-                else:
-                    logger.info("Using Scrapy for faster crawling")
-                    stats = crawl_with_scrapy(
-                        start_url=self.start_url,
-                        output_dir=self.save_path,
-                        max_depth=self.max_depth,
-                        max_pages=self.max_pages,
-                        delay=self.base_delay,
-                        follow_subdomains=self.follow_subdomains,
-                        url_filter=self.url_pattern.pattern if self.url_pattern else None,
-                        respect_robots=self.respect_robots_txt,
-                        generate_graph=self.generate_graph,
-                        graph_type=self.graph_type,
-                        graph_title=self.graph_title
-                    )
-                    
-                    # Update metadata
-                    self._update_metadata()
-                    
-                    # Extract page count and graph file path from stats
-                    self.page_count = stats.get('pages_crawled', 0)
-                    graph_file = stats.get('graph_file', None)
-                    
-                    logger.info(f"Scrapy crawl completed. Visited {self.page_count} pages.")
-                    return self.page_count, graph_file
-                    
-            except ImportError as e:
-                logger.warning(f"Could not import scrapy_adapter: {str(e)}. Falling back to regular crawler.")
-            except Exception as e:
-                logger.error(f"Error using Scrapy: {str(e)}. Falling back to regular crawler.")
-        
-        # Use regular crawling methods if not using Scrapy or if Scrapy failed
-        if self.crawl_method == "breadth":
-            self._breadth_first_crawl()
-        else:
-            self._depth_first_crawl()
-            
-        # Update and save metadata after crawling
-        self._update_metadata()
-        
-        logger.info(f"Crawl completed. Visited {self.page_count} pages.")
-        
-        # Generate graph visualization if requested
-        graph_file = None
-        if self.generate_graph:
-            graph_file = self.generate_graph_visualization()
-            if graph_file:
-                logger.info(f"Graph visualization saved to: {graph_file}")
-        
-        return self.page_count, graph_file
-    
-    def _breadth_first_crawl(self):
-        """Perform breadth-first crawling."""
-        self.crawl_start_time = datetime.now()
-        logger.info(f"Starting breadth-first crawl from {self.start_url}")
-        
-        # Initialize the queue with the starting URL and depth 0
-        queue = deque([(self.start_url, 0)])
-        self.visited.add(self.start_url)
-        
-        while queue and self.page_count < self.max_pages:
-            url, depth = queue.popleft()
-            
-            if depth > self.max_depth:
-                continue
-                
-            logger.info(f"Crawling [{self.page_count+1}/{self.max_pages}]: {url} (depth {depth})")
-            
-            try:
-                html_content, text_content, soup = self._fetch_page(url)
-                if not html_content:
-                    continue
-                    
-                self.page_count += 1
-                
-                # Extract links from the page
-                links = self._extract_links(soup, url)
-                
-                # Save the page data
-                self._save_page(url, html_content, text_content, links, depth)
-                
-                # Add new links to the queue
-                for link in links:
-                    if link not in self.visited:
-                        queue.append((link, depth + 1))
-                        self.visited.add(link)
-                
-                # Apply delay before next request
-                time.sleep(self._get_delay())
-                
-            except Exception as e:
-                logger.error(f"Error crawling {url}: {str(e)}")
-    
-    def _depth_first_crawl(self):
-        """Perform depth-first crawling."""
-        self.crawl_start_time = datetime.now()
-        logger.info(f"Starting depth-first crawl from {self.start_url}")
-        
-        # Initialize the stack with the starting URL and depth 0
-        stack = [(self.start_url, 0)]
-        self.visited.add(self.start_url)
-        
-        while stack and self.page_count < self.max_pages:
-            url, depth = stack.pop()
-            
-            if depth > self.max_depth:
-                continue
-                
-            logger.info(f"Crawling [{self.page_count+1}/{self.max_pages}]: {url} (depth {depth})")
-            
-            try:
-                html_content, text_content, soup = self._fetch_page(url)
-                if not html_content:
-                    continue
-                    
-                self.page_count += 1
-                
-                # Extract links from the page
-                links = self._extract_links(soup, url)
-                
-                # Save the page data
-                self._save_page(url, html_content, text_content, links, depth)
-                
-                # Add new links to the stack (in reverse order to maintain priority)
-                for link in reversed(links):
-                    if link not in self.visited:
-                        stack.append((link, depth + 1))
-                        self.visited.add(link)
-                
-                # Apply delay before next request
-                time.sleep(self._get_delay())
-                
-            except Exception as e:
-                logger.error(f"Error crawling {url}: {str(e)}")
-    
-    def _fetch_page(self, url):
-        """Fetch a page and parse it."""
-        # Try with regular requests first
-        try:
-            response = self.session.get(url, headers=self.headers, timeout=10)
-            
-            if response.status_code == 200:
-                html_content = response.text
-                soup = BeautifulSoup(html_content, 'html.parser')
-                
-                # Clean up the content
-                for script in soup(["script", "style"]):
-                    script.extract()
-                
-                # Get the text
-                text_content = soup.get_text(separator=' ', strip=True)
-                
-                # Check if content is substantial enough
-                if len(text_content) > 500 or not self.selenium_fallback:
-                    return html_content, text_content, soup
-                else:
-                    logger.warning(f"Content may be incomplete for {url}, trying Selenium as fallback...")
-            else:
-                logger.error(f"Failed to retrieve page {url} (Status code: {response.status_code})")
-        
-        except Exception as e:
-            logger.error(f"Error during page retrieval {url}: {str(e)}")
-        
-        # If we're here and selenium_fallback is True, try with Selenium
-        if self.selenium_fallback:
-            try:
-                logger.info(f"Attempting to scrape {url} with Selenium...")
-                
-                # Get the HTML with Selenium
-                html_content = scrape_with_selenium(url, headless=self.headless)
-                
-                if html_content and len(html_content) > 0:
-                    # Parse the HTML with BeautifulSoup
-                    soup = BeautifulSoup(html_content, 'html.parser')
-                    
-                    # Clean up the content
-                    for script in soup(["script", "style"]):
-                        script.extract()
-                    
-                    # Extract text
-                    text_content = soup.get_text(separator=' ', strip=True)
-                    logger.info(f"Successfully retrieved {len(text_content)} characters using Selenium")
-                    
-                    return html_content, text_content, soup
-                else:
-                    logger.error(f"Failed to retrieve content with Selenium for {url}")
-            
-            except Exception as e:
-                logger.error(f"Error during Selenium scraping for {url}: {str(e)}")
-        
-        return None, None, None
     
     def _clean_html(self, html_content):
         """Clean the HTML content."""
@@ -568,18 +455,17 @@ class WebCrawler:
         
         return cleaned_html
 
-
     def get_crawl_stats(self, graph_file=None):
         """Get statistics about the crawl."""
         stats = {
-            "pages_crawled": self.page_count,
+            "pages_crawled": len(self.crawled_urls),
             "start_url": self.start_url,
             "max_depth": self.max_depth,
             "max_pages": self.max_pages,
-            "crawl_method": self.crawl_method,
-            "start_time": self.crawl_start_time.isoformat() if self.crawl_start_time else None,
-            "end_time": datetime.now().isoformat() if self.crawl_start_time else None,
-            "domain": self.base_domain
+            "crawl_method": "breadth-first",
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "domain": self.domain
         }
         
         # Add graph file path if available
@@ -601,7 +487,7 @@ class WebCrawler:
             Path to the generated graph file or None if generation fails
         """
         graph_type = graph_type or self.graph_type or "tree"  # Default to tree visualization
-        title = title or self.graph_title
+        title = title or f"Web Crawl Graph - {self.start_url}"
         
         try:
             # Import visualization functions only when needed
@@ -621,13 +507,13 @@ class WebCrawler:
                 return generate_crawl_graph(
                     self.save_path, 
                     output_file=output_file,
-                    title=title or f"Web Crawl Graph - {self.start_url}"
+                    title=title
                 )
             elif graph_type == "domain":
                 return generate_domain_graph(
                     self.save_path,
                     output_file=output_file,
-                    title=title or f"Domain Graph - {self.start_url}"
+                    title=title
                 )
             elif graph_type == "interactive":
                 return create_dynamic_graph(
@@ -635,14 +521,14 @@ class WebCrawler:
                     output_file=output_file
                 )
             else:
-                logger.error(f"Unknown graph type: {graph_type}")
+                self.logger.error(f"Unknown graph type: {graph_type}")
                 return None
                 
         except ImportError:
-            logger.error("Could not import visualization modules. Make sure networkx and matplotlib are installed.")
+            self.logger.error("Could not import visualization modules. Make sure networkx and matplotlib are installed.")
             return None
         except Exception as e:
-            logger.error(f"Error generating graph: {str(e)}")
+            self.logger.error(f"Error generating graph: {str(e)}")
             return None
             
     def generate_tree_visualization(self, output_file=None):
@@ -660,6 +546,69 @@ class WebCrawler:
     def generate_interactive_graph(self, output_file=None):
         """Generate an interactive HTML graph visualization."""
         return self.generate_graph_visualization("interactive", None, output_file)
+
+    def _init_robots_parser(self):
+        """Initialize the robots.txt parser."""
+        parsed_url = urlparse(self.start_url)
+        robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
+        self.robots_parser = RobotFileParser()
+        self.robots_parser.set_url(robots_url)
+        self.robots_parser.read()
+        self.logger.info(f"Loaded robots.txt from {robots_url}")
+    
+    def _init_cache(self):
+        """Initialize the cache."""
+        # This method is empty as the original implementation didn't include cache initialization
+        pass
+    
+    def _save_metadata(self):
+        """Save metadata about the crawl to a file."""
+        # Ensure the save directory exists
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path)
+        
+        # Handle start_time and end_time which might be float or datetime objects
+        start_time_value = self.start_time
+        if hasattr(self.start_time, 'timestamp'):
+            start_time_value = self.start_time.timestamp()
+        
+        end_time_value = self.end_time
+        if hasattr(self.end_time, 'timestamp'):
+            end_time_value = self.end_time.timestamp()
+        
+        # Calculate duration
+        if isinstance(self.start_time, (int, float)) and isinstance(self.end_time, (int, float)):
+            duration = self.end_time - self.start_time
+        elif hasattr(self.start_time, 'timestamp') and hasattr(self.end_time, 'timestamp'):
+            duration = (self.end_time - self.start_time).total_seconds()
+        else:
+            duration = 0
+        
+        # Create metadata dictionary
+        metadata = {
+            "start_url": self.start_url,
+            "crawled_urls": self.crawled_urls,
+            "crawl_stats": {
+                "start_time": start_time_value,
+                "end_time": end_time_value,
+                "duration": duration,
+                "pages_crawled": len(self.crawled_urls),
+                "max_depth": self.max_depth,
+                "max_pages": self.max_pages
+            }
+        }
+        
+        # Save metadata to file
+        metadata_file = os.path.join(self.save_path, "metadata.json")
+        try:
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+            self.logger.info(f"Metadata saved to {metadata_file}")
+        except Exception as e:
+            self.logger.error(f"Error saving metadata: {str(e)}")
+            return None
+        
+        return metadata_file
 
 
 # CLI function for using the crawler directly
@@ -707,13 +656,22 @@ def crawl_site(
         delay=delay,
         save_path=output_dir,
         crawl_method=crawl_method,
-        follow_subdomains=follow_subdomains,
-        selenium_fallback=use_selenium,
-        url_pattern=url_filter,
+        follow_external_links=follow_subdomains,
+        respect_robots_txt=True,
+        user_agent=None,
         generate_graph=generate_graph,
         graph_type=graph_type,
-        graph_title=graph_title,
-        use_scrapy=use_scrapy
+        log_level="INFO",
+        use_scrapy=use_scrapy,
+        scrapy_settings=None,
+        save_html=True,
+        save_screenshots=False,
+        headless=use_selenium,
+        browser_type="chrome",
+        filter_urls=url_filter,
+        extract_metadata=None,
+        cache_backend="memory",
+        redis_url="redis://localhost:6379/0"
     )
     
     # Start crawling

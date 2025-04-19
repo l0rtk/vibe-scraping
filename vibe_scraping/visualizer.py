@@ -689,40 +689,42 @@ def create_tree_visualization(crawl_data_path, output_file=None):
     tree_data = {"id": start_url, "name": _get_display_name(start_url), "children": []}
     
     # Process immediate children of the start URL
-    def build_tree(node_id, tree_node, current_depth=0, max_depth=5):
+    def build_tree(node_id, tree_node, current_depth=0, max_depth=5, visited=None):
         if current_depth >= max_depth:
             return
             
+        if visited is None:
+            visited = set()
+        
+        if node_id in visited:
+            return
+            
+        visited.add(node_id)
+            
+        # Get successors from the graph
         children = list(G.successors(node_id))
         for child in children:
             # Skip if this would create a cycle
-            current_node = tree_node
-            parent_chain = []
-            while current_node:
-                parent_chain.append(current_node.get("id"))
-                current_node = current_node.get("parent")
-                
-            if child in parent_chain:
+            if child in visited:
                 continue
                 
             # Only add nodes that were actually crawled
             if child in crawled_urls:
-                # Check if the depth of this child is actually one more than the current node
+                # Check if the depth of this child makes sense in relation to parent
                 parent_depth = crawled_urls.get(node_id, {}).get('depth', 0)
                 child_depth = crawled_urls.get(child, {}).get('depth', 999)
                 
-                # Only add this child if its depth is one more than the parent
-                # or if the parent is the start URL and the child has depth 1
+                # Only add if child's depth is one more than parent's depth
+                # or if parent is start_url and child has depth 1
                 if (child_depth == parent_depth + 1) or (node_id == start_url and child_depth == 1):
                     child_node = {
                         "id": child,
                         "name": _get_display_name(child),
                         "depth": child_depth,
-                        "children": [],
-                        "parent": tree_node
+                        "children": []
                     }
                     tree_node["children"].append(child_node)
-                    build_tree(child, child_node, current_depth + 1, max_depth)
+                    build_tree(child, child_node, current_depth + 1, max_depth, visited.copy())
     
     # Start building the tree from the root
     build_tree(start_url, tree_data)
@@ -871,6 +873,43 @@ def _create_tree_html_template(tree_data, start_url):
                 z-index: 1000;
                 border: 1px solid #ddd;
             }
+            
+            .stats-panel {
+                position: absolute;
+                top: 70px;
+                right: 20px;
+                background: white;
+                border: 1px solid #aaa;
+                border-radius: 5px;
+                padding: 10px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                z-index: 1000;
+                font-size: 12px;
+                min-width: 200px;
+            }
+            
+            .stats-title {
+                font-weight: bold;
+                margin-bottom: 5px;
+                font-size: 14px;
+                border-bottom: 1px solid #ddd;
+                padding-bottom: 3px;
+            }
+            
+            .stats-row {
+                display: flex;
+                justify-content: space-between;
+                margin: 3px 0;
+            }
+            
+            .stats-label {
+                font-weight: bold;
+                margin-right: 10px;
+            }
+            
+            .stats-value {
+                text-align: right;
+            }
         </style>
     </head>
     <body>
@@ -886,6 +925,38 @@ def _create_tree_html_template(tree_data, start_url):
             <button id="reset">Reset View</button>
             <button id="expand-all">Expand All</button>
             <button id="collapse-all">Collapse All</button>
+        </div>
+        
+        <div class="stats-panel">
+            <div class="stats-title">Crawl Statistics</div>
+            <div class="stats-row">
+                <span class="stats-label">Pages Crawled:</span>
+                <span class="stats-value">{{ stats.pages_crawled }}</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label">Max Depth:</span>
+                <span class="stats-value">{{ stats.max_depth }}</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label">Domains:</span>
+                <span class="stats-value">{{ stats.domains }}</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label">Start Time:</span>
+                <span class="stats-value">{{ stats.start_time }}</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label">Duration:</span>
+                <span class="stats-value">{{ stats.duration }}</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label">Visible Nodes:</span>
+                <span class="stats-value" id="visible-nodes">-</span>
+            </div>
+            <div class="stats-row">
+                <span class="stats-label">Total Nodes:</span>
+                <span class="stats-value" id="total-nodes">-</span>
+            </div>
         </div>
         
         <div class="tooltip" id="tooltip"></div>
@@ -965,6 +1036,26 @@ def _create_tree_html_template(tree_data, start_url):
                 }
             }
         });
+        
+        // Update node counts in stats panel
+        function updateNodeCounts() {
+            const totalNodes = root.descendants().length;
+            document.getElementById('total-nodes').textContent = totalNodes;
+            
+            // Count visible nodes (not collapsed)
+            const visibleNodes = countVisibleNodes(root);
+            document.getElementById('visible-nodes').textContent = visibleNodes;
+        }
+        
+        function countVisibleNodes(node) {
+            let count = 1; // Count this node
+            if (node.children) {
+                node.children.forEach(child => {
+                    count += countVisibleNodes(child);
+                });
+            }
+            return count;
+        }
         
         // Main update function
         function update(source) {
@@ -1098,6 +1189,9 @@ def _create_tree_html_template(tree_data, start_url):
                     ${d.x} ${d.y}`;
                 return path;
             }
+            
+            // Update node counts in stats panel
+            updateNodeCounts();
         }
         
         // Center the tree
@@ -1186,8 +1280,47 @@ def _create_tree_html_template(tree_data, start_url):
     
     # Replace template variables
     import json
+    from datetime import datetime
+    
+    # Calculate statistics - using the current context, not relying on metadata variable
+    stats = {
+        'pages_crawled': len(tree_data.get("children", [])) + 1,  # Root + children
+        'max_depth': 0,
+        'domains': 1,  # Default to at least the start domain
+        'start_time': 'Unknown',
+        'duration': 'Unknown'
+    }
+    
+    # Calculate max depth by traversing the tree
+    def find_max_depth(node, current_depth=0):
+        if not node.get("children"):
+            return current_depth
+        
+        max_child_depth = current_depth
+        for child in node.get("children", []):
+            child_depth = find_max_depth(child, current_depth + 1)
+            max_child_depth = max(max_child_depth, child_depth)
+        
+        return max_child_depth
+    
+    stats['max_depth'] = find_max_depth(tree_data)
+    
+    # Count domains by traversing the tree
+    domains = set()
+    def collect_domains(node):
+        if "id" in node:
+            domain = urlparse(node["id"]).netloc
+            domains.add(domain)
+        
+        for child in node.get("children", []):
+            collect_domains(child)
+    
+    collect_domains(tree_data)
+    stats['domains'] = len(domains)
+    
     template_obj = Template(template)
     return template_obj.render(
         tree_data=json.dumps(tree_data),
-        start_url=start_url
+        start_url=start_url,
+        stats=stats
     ) 
