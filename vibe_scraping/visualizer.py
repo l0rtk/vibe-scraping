@@ -766,7 +766,8 @@ def _create_tree_html_template(tree_data, start_url):
                 font-family: 'Arial', sans-serif;
                 margin: 0;
                 padding: 0;
-                background-color: #f8f9fa;
+                background-color: #ffffff;
+                color: #222222;
             }
             
             #visualization {
@@ -780,18 +781,21 @@ def _create_tree_html_template(tree_data, start_url):
             }
             
             .node circle {
-                fill: #fff;
-                stroke-width: 2px;
+                fill: #ffffff;
+                stroke: #333333;
+                stroke-width: 1.5px;
             }
             
             .node text {
                 font-size: 12px;
                 font-family: 'Arial', sans-serif;
+                fill: #333333;
             }
             
             .link {
                 fill: none;
-                stroke-width: 2px;
+                stroke: #555555;
+                stroke-width: 1.5px;
             }
             
             .controls {
@@ -799,7 +803,7 @@ def _create_tree_html_template(tree_data, start_url):
                 top: 20px;
                 right: 20px;
                 background: white;
-                border: 1px solid #ddd;
+                border: 1px solid #aaa;
                 border-radius: 5px;
                 padding: 10px;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.1);
@@ -809,20 +813,21 @@ def _create_tree_html_template(tree_data, start_url):
             .controls button {
                 margin: 5px;
                 padding: 5px 10px;
-                background: #f1f1f1;
-                border: 1px solid #ddd;
+                background: #f8f8f8;
+                border: 1px solid #ccc;
                 border-radius: 3px;
                 cursor: pointer;
+                color: #333;
             }
             
             .controls button:hover {
-                background: #e1e1e1;
+                background: #e8e8e8;
             }
             
             .tooltip {
                 position: absolute;
                 padding: 8px;
-                background: rgba(0, 0, 0, 0.8);
+                background: rgba(0, 0, 0, 0.7);
                 color: white;
                 border-radius: 4px;
                 font-size: 12px;
@@ -841,6 +846,7 @@ def _create_tree_html_template(tree_data, start_url):
                 width: 100%;
                 padding: 5px;
                 box-sizing: border-box;
+                border: 1px solid #ccc;
             }
             
             .title {
@@ -854,6 +860,7 @@ def _create_tree_html_template(tree_data, start_url):
                 padding: 5px 10px;
                 border-radius: 5px;
                 z-index: 1000;
+                border: 1px solid #ddd;
             }
         </style>
     </head>
@@ -883,9 +890,13 @@ def _create_tree_html_template(tree_data, start_url):
         const width = window.innerWidth - margin.left - margin.right;
         const height = window.innerHeight - margin.top - margin.bottom;
         
-        // Create a color scale based on depth
-        const colorScale = d3.scaleSequential(d3.interpolateYlGnBu)
-            .domain([0, 10]);  // Adjust max depth as needed
+        // Create a grayscale color function based on depth
+        function getNodeColor(depth) {
+            // Darker gray for lower depths (closer to root)
+            // Lighter gray for higher depths
+            const grayscale = Math.min(90, 30 + (depth * 15)); // 30% to 90% brightness
+            return `rgb(${grayscale}%, ${grayscale}%, ${grayscale}%)`;
+        }
             
         // Set up the tree layout - inverted for top-down
         const tree = d3.tree()
@@ -991,7 +1002,7 @@ def _create_tree_html_template(tree_data, start_url):
                 .on("mouseout", function() {
                     d3.select(this).select("circle")
                         .attr("r", 6)
-                        .style("stroke-width", "2px");
+                        .style("stroke-width", "1.5px");
                         
                     d3.select("#tooltip").transition()
                         .duration(500)
@@ -1001,8 +1012,8 @@ def _create_tree_html_template(tree_data, start_url):
             // Add Circle for the nodes
             nodeEnter.append("circle")
                 .attr("r", 6)
-                .style("fill", d => d._children ? colorScale(d.depth) : "#fff")
-                .style("stroke", d => colorScale(d.depth));
+                .style("fill", d => d._children ? "#e8e8e8" : "#fff")
+                .style("stroke", d => getNodeColor(d.depth));
                 
             // Add labels for the nodes
             nodeEnter.append("text")
@@ -1010,8 +1021,7 @@ def _create_tree_html_template(tree_data, start_url):
                 .attr("x", d => d.children || d._children ? -13 : 13)
                 .attr("text-anchor", d => d.children || d._children ? "end" : "start")
                 .text(d => d.data.name)
-                .style("fill-opacity", 0)
-                .style("font-size", "10px");
+                .style("fill-opacity", 0);
                 
             // Update the nodes
             const nodeUpdate = nodeEnter.merge(node);
@@ -1024,8 +1034,8 @@ def _create_tree_html_template(tree_data, start_url):
             // Update node attributes
             nodeUpdate.select("circle")
                 .attr("r", 6)
-                .style("fill", d => d._children ? colorScale(d.depth) : "#fff")
-                .style("stroke", d => colorScale(d.depth));
+                .style("fill", d => d._children ? "#e8e8e8" : "#fff")
+                .style("stroke", d => getNodeColor(d.depth));
                 
             nodeUpdate.select("text")
                 .style("fill-opacity", 1);
@@ -1055,7 +1065,7 @@ def _create_tree_html_template(tree_data, start_url):
                     const o = {x: source.x0, y: source.y0};
                     return diagonal(o, o);
                 })
-                .style("stroke", d => colorScale(d.target.depth - 1))
+                .style("stroke", "#aaaaaa")
                 .style("opacity", 0.5);
                 
             // Update the links
@@ -1064,8 +1074,7 @@ def _create_tree_html_template(tree_data, start_url):
             // Transition to proper position
             linkUpdate.transition()
                 .duration(750)
-                .attr("d", d => diagonal(d.source, d.target))
-                .style("stroke", d => colorScale(d.target.depth - 1));
+                .attr("d", d => diagonal(d.source, d.target));
                 
             // Remove any exiting links
             link.exit()
@@ -1157,8 +1166,8 @@ def _create_tree_html_template(tree_data, start_url):
             
             // Reset all node styling
             d3.selectAll(".node circle")
-                .style("stroke-width", "2px")
-                .style("stroke", d => colorScale(d.depth));
+                .style("stroke-width", "1.5px")
+                .style("stroke", d => getNodeColor(d.depth));
                 
             if (searchTerm.length < 2) return;
             
@@ -1166,8 +1175,8 @@ def _create_tree_html_template(tree_data, start_url):
             d3.selectAll(".node").filter(d => {
                 return d.data.id.toLowerCase().includes(searchTerm);
             }).select("circle")
-                .style("stroke-width", "4px")
-                .style("stroke", "red");
+                .style("stroke-width", "3px")
+                .style("stroke", "#000000");
         });
         
         // Initial update
