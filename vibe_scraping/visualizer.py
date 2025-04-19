@@ -738,8 +738,11 @@ def create_tree_visualization(crawl_data_path, output_file=None):
     
     clean_tree(tree_data)
     
-    # Create the visualization
-    html = _create_tree_html_template(tree_data, start_url)
+    # Get stats from metadata if available, otherwise use defaults
+    crawl_stats = metadata.get("crawl_stats", {})
+    
+    # Create the visualization with stats from metadata
+    html = _create_tree_html_template(tree_data, start_url, crawl_stats, len(crawled_urls))
     
     with open(output_file, 'w') as f:
         f.write(html)
@@ -763,8 +766,70 @@ def _get_display_name(url):
         
     return f"{domain}{path}"
 
-def _create_tree_html_template(tree_data, start_url):
+def _create_tree_html_template(tree_data, start_url, crawl_stats=None, num_pages=0):
     """Create HTML for the tree visualization using D3.js."""
+    from datetime import datetime
+    
+    # Initialize stats object with default values
+    stats = {
+        'pages_crawled': num_pages or len(tree_data.get("children", [])) + 1,  # Use num_pages if provided, otherwise count nodes
+        'max_depth': crawl_stats.get('max_depth', 0),
+        'domains': 1,  # Default to at least the start domain
+        'start_time': 'Unknown',
+        'duration': 'Unknown'
+    }
+    
+    # Process start_time from crawl_stats if available
+    start_time = crawl_stats.get('start_time')
+    if start_time is not None:
+        if isinstance(start_time, (int, float)):
+            stats['start_time'] = datetime.fromtimestamp(start_time).strftime('%Y-%m-%d %H:%M:%S')
+        elif isinstance(start_time, str):
+            try:
+                # Try to parse ISO format string
+                dt = datetime.fromisoformat(start_time)
+                stats['start_time'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                # If it's a different string format, use as is
+                stats['start_time'] = start_time
+    
+    # Process duration from crawl_stats if available
+    duration = crawl_stats.get('duration')
+    if duration is not None:
+        if isinstance(duration, (int, float)):
+            stats['duration'] = f"{duration:.2f} seconds"
+        else:
+            stats['duration'] = str(duration)
+    
+    # If max_depth not in crawl_stats, calculate it from the tree
+    if 'max_depth' not in crawl_stats:
+        # Calculate max depth by traversing the tree
+        def find_max_depth(node, current_depth=0):
+            if not node.get("children"):
+                return current_depth
+            
+            max_child_depth = current_depth
+            for child in node.get("children", []):
+                child_depth = find_max_depth(child, current_depth + 1)
+                max_child_depth = max(max_child_depth, child_depth)
+            
+            return max_child_depth
+        
+        stats['max_depth'] = find_max_depth(tree_data)
+    
+    # Count domains by traversing the tree
+    domains = set()
+    def collect_domains(node):
+        if "id" in node:
+            domain = urlparse(node["id"]).netloc
+            domains.add(domain)
+        
+        for child in node.get("children", []):
+            collect_domains(child)
+    
+    collect_domains(tree_data)
+    stats['domains'] = len(domains)
+    
     template = """
     <!DOCTYPE html>
     <html>
@@ -1277,46 +1342,6 @@ def _create_tree_html_template(tree_data, start_url):
     </body>
     </html>
     """
-    
-    # Replace template variables
-    import json
-    from datetime import datetime
-    
-    # Calculate statistics - using the current context, not relying on metadata variable
-    stats = {
-        'pages_crawled': len(tree_data.get("children", [])) + 1,  # Root + children
-        'max_depth': 0,
-        'domains': 1,  # Default to at least the start domain
-        'start_time': 'Unknown',
-        'duration': 'Unknown'
-    }
-    
-    # Calculate max depth by traversing the tree
-    def find_max_depth(node, current_depth=0):
-        if not node.get("children"):
-            return current_depth
-        
-        max_child_depth = current_depth
-        for child in node.get("children", []):
-            child_depth = find_max_depth(child, current_depth + 1)
-            max_child_depth = max(max_child_depth, child_depth)
-        
-        return max_child_depth
-    
-    stats['max_depth'] = find_max_depth(tree_data)
-    
-    # Count domains by traversing the tree
-    domains = set()
-    def collect_domains(node):
-        if "id" in node:
-            domain = urlparse(node["id"]).netloc
-            domains.add(domain)
-        
-        for child in node.get("children", []):
-            collect_domains(child)
-    
-    collect_domains(tree_data)
-    stats['domains'] = len(domains)
     
     template_obj = Template(template)
     return template_obj.render(
