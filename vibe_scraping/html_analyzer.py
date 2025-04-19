@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class HTMLAnalyzer:
     """Analyzer for extracting and processing text from crawled HTML files."""
     
-    def __init__(self, crawl_data_path="./crawl_data"):
+    def __init__(self, crawl_data_path="./data/crawl_data"):
         """
         Initialize the analyzer.
         
@@ -189,12 +189,15 @@ class HTMLAnalyzer:
             "page_results": self.results
         }
         
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(output, f, indent=2, ensure_ascii=False)
         
         logger.info(f"Analysis results saved to {output_path}")
 
-def analyze_html_content(crawl_data_path="./crawl_data", output_path="./analysis_results.json"):
+def analyze_html_content(crawl_data_path="./data/crawl_data", output_path="./data/analysis/analysis_results.json"):
     """
     Convenience function to analyze crawled data.
     
@@ -217,8 +220,8 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Analyze crawled HTML content")
-    parser.add_argument("--input", default="./crawl_data", help="Path to crawled data directory")
-    parser.add_argument("--output", default="./analysis_results.json", help="Path to save analysis results")
+    parser.add_argument("--input", default="./data/crawl_data", help="Path to crawled data directory")
+    parser.add_argument("--output", default="./data/analysis/analysis_results.json", help="Path to save analysis results")
     
     args = parser.parse_args()
     

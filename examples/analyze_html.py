@@ -9,8 +9,8 @@ def main():
     print("Running HTML analysis with the convenience function...")
     # Method 1: Use the convenience function
     stats = analyze_html_content(
-        crawl_data_path="./crawl_data",
-        output_path="./html_analysis_results.json"
+        crawl_data_path="./data/crawl_data",
+        output_path="./data/analysis/html_analysis_results.json"
     )
     
     print(f"\nAnalysis completed:")
@@ -20,7 +20,7 @@ def main():
     
     # Method 2: Use the HTMLAnalyzer class directly for more control
     print("\nRunning HTML analysis with the HTMLAnalyzer class...")
-    analyzer = HTMLAnalyzer("./crawl_data")
+    analyzer = HTMLAnalyzer("./data/crawl_data")
     
     # Load metadata
     metadata = analyzer.load_metadata()

@@ -21,7 +21,7 @@ class WebCrawler:
         respect_robots_txt=True,
         user_agent=None,
         delay=0.1,
-        save_path="./crawl_data",
+        save_path="./data/crawl_data",
     ):
         self.start_url = start_url
         self.max_depth = max_depth
