@@ -295,7 +295,7 @@ def crawl_with_scrapy(
     
     # Set up a Scrapy project
     settings = {
-        'USER_AGENT': user_agent or 'vibe-scraper (+https://github.com/yourusername/vibe-scraping)',
+        'USER_AGENT': user_agent or 'vibe-scraper (+https://github.com/l0rtk/vibe-scraping)',
         'ROBOTSTXT_OBEY': respect_robots_txt,
         'DOWNLOAD_DELAY': delay,
         'CLOSESPIDER_PAGECOUNT': max_pages,

@@ -13,7 +13,7 @@ Lightweight web crawler using Scrapy for deep web crawling.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/vibe-scraping.git
+git clone https://github.com/l0rtk/vibe-scraping.git
 cd vibe-scraping
 
 # Install dependencies
