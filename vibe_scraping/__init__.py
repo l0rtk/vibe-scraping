@@ -11,9 +11,19 @@ except ImportError:
     # Define a placeholder for SCRAPY_AVAILABLE if the module is not available
     SCRAPY_AVAILABLE = False
 
+# Import analyzer functions
+try:
+    from .analyzer import ContentAnalyzer, analyze_crawl_data
+except ImportError:
+    # If BeautifulSoup is not available
+    ContentAnalyzer = None
+    analyze_crawl_data = None
+
 __all__ = [
     'WebCrawler',
     'crawl_site',
     'SCRAPY_AVAILABLE',
-    'crawl_with_scrapy'
+    'crawl_with_scrapy',
+    'ContentAnalyzer',
+    'analyze_crawl_data'
 ]
