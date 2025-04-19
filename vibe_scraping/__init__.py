@@ -13,17 +13,17 @@ except ImportError:
 
 # Import analyzer functions
 try:
-    from .analyzer import ContentAnalyzer, analyze_crawl_data
+    from .html_analyzer import HTMLAnalyzer, analyze_html_content
 except ImportError:
     # If BeautifulSoup is not available
-    ContentAnalyzer = None
-    analyze_crawl_data = None
+    HTMLAnalyzer = None
+    analyze_html_content = None
 
 __all__ = [
     'WebCrawler',
     'crawl_site',
     'SCRAPY_AVAILABLE',
     'crawl_with_scrapy',
-    'ContentAnalyzer',
-    'analyze_crawl_data'
+    'HTMLAnalyzer',
+    'analyze_html_content'
 ]
