@@ -12,6 +12,12 @@ import matplotlib.pyplot as plt
 from urllib.parse import urlparse
 import logging
 
+try:
+    from jinja2 import Template
+except ImportError:
+    # Jinja2 is optional, only needed for tree visualization
+    pass
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -583,3 +589,598 @@ def create_dynamic_graph(crawl_data_path, output_file=None):
     
     logger.info(f"Interactive graph saved to {output_file}")
     return output_file 
+
+def create_tree_visualization(crawl_data_path, output_file=None):
+    """
+    Create an interactive tree visualization of the crawl graph with the start URL at the top.
+    
+    This visualization presents the crawled pages in a tree structure with:
+    - The start URL as the root node at the top
+    - Child pages structured below in a hierarchical tree
+    - Interactive features like zoom, pan, and node expansion/collapse
+    - Depth-based coloring and visual indicators
+    
+    Args:
+        crawl_data_path: Path to the crawl data directory
+        output_file: Path to save the HTML file (default: tree_visualization.html in crawl_data_path)
+        
+    Returns:
+        Path to the generated HTML file
+    """
+    # Try to import required libraries
+    try:
+        import networkx as nx
+        from jinja2 import Template
+    except ImportError:
+        logger.error("Required libraries not installed. Run 'pip install networkx jinja2' to use this feature.")
+        return None
+    
+    # Check if the crawl data directory exists
+    if not os.path.exists(crawl_data_path):
+        logger.error(f"Crawl data directory not found: {crawl_data_path}")
+        return None
+    
+    # Load the metadata file
+    metadata_file = os.path.join(crawl_data_path, "metadata.json")
+    if not os.path.exists(metadata_file):
+        logger.error(f"Metadata file not found: {metadata_file}")
+        return None
+    
+    try:
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading metadata: {str(e)}")
+        return None
+    
+    # Get the crawled URLs
+    crawled_urls = metadata.get("crawled_urls", {})
+    
+    # Check if we have any crawled URLs
+    if not crawled_urls:
+        logger.error("No crawled URLs found in metadata")
+        return None
+    
+    # Ensure output file path
+    if not output_file:
+        output_file = os.path.join(crawl_data_path, "tree_visualization.html")
+    
+    # Get the start URL from metadata
+    start_url = metadata.get("start_url")
+    if not start_url and "crawl_stats" in metadata and "start_url" in metadata["crawl_stats"]:
+        start_url = metadata["crawl_stats"]["start_url"]
+    
+    if not start_url:
+        # Try to determine start URL from the crawled URLs
+        min_depth = float('inf')
+        for url, data in crawled_urls.items():
+            depth = data.get('depth', float('inf'))
+            if depth < min_depth:
+                min_depth = depth
+                start_url = url
+    
+    if not start_url:
+        logger.error("Could not determine start URL")
+        return None
+    
+    # Create a directed graph
+    G = nx.DiGraph()
+    
+    # Add nodes and edges from the metadata
+    for url, data in crawled_urls.items():
+        depth = data.get('depth', 999)
+        title = data.get('title', url)
+        G.add_node(url, depth=depth, title=title)
+        
+        # Add edges from this URL to its links
+        if "links" in data:
+            for link in data["links"]:
+                if link in crawled_urls:  # Only add edges to URLs that were also crawled
+                    G.add_edge(url, link)
+    
+    # Make sure the start_url is properly connected
+    if start_url in G.nodes():
+        # For URLs at depth 1, ensure they are connected to the start URL
+        for url, data in crawled_urls.items():
+            if url != start_url and data.get('depth') == 1:
+                G.add_edge(start_url, url)
+    
+    # Extract the tree structure
+    tree_data = {"id": start_url, "name": _get_display_name(start_url), "children": []}
+    
+    # Process immediate children of the start URL
+    def build_tree(node_id, tree_node, current_depth=0, max_depth=5):
+        if current_depth >= max_depth:
+            return
+            
+        children = list(G.successors(node_id))
+        for child in children:
+            # Skip if this would create a cycle
+            current_node = tree_node
+            parent_chain = []
+            while current_node:
+                parent_chain.append(current_node.get("id"))
+                current_node = current_node.get("parent")
+                
+            if child in parent_chain:
+                continue
+                
+            child_node = {
+                "id": child,
+                "name": _get_display_name(child),
+                "depth": crawled_urls.get(child, {}).get('depth', 999),
+                "children": [],
+                "parent": tree_node
+            }
+            tree_node["children"].append(child_node)
+            build_tree(child, child_node, current_depth + 1, max_depth)
+    
+    # Start building the tree from the root
+    build_tree(start_url, tree_data)
+    
+    # Remove parent references (which were only used to detect cycles)
+    def clean_tree(node):
+        if "parent" in node:
+            del node["parent"]
+        for child in node.get("children", []):
+            clean_tree(child)
+    
+    clean_tree(tree_data)
+    
+    # Create the visualization
+    html = _create_tree_html_template(tree_data, start_url)
+    
+    with open(output_file, 'w') as f:
+        f.write(html)
+    
+    logger.info(f"Tree visualization saved to {output_file}")
+    return output_file
+
+def _get_display_name(url):
+    """Get a shorter display name for a URL."""
+    parsed = urlparse(url)
+    domain = parsed.netloc
+    path = parsed.path
+    
+    # Truncate the path if it's too long
+    if len(path) > 20:
+        path = path[:17] + "..."
+        
+    # For the root domain with no path, just show the domain
+    if path == "" or path == "/":
+        return domain
+        
+    return f"{domain}{path}"
+
+def _create_tree_html_template(tree_data, start_url):
+    """Create HTML for the tree visualization using D3.js."""
+    template = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Web Crawl Tree Visualization</title>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+        <style>
+            body {
+                font-family: 'Arial', sans-serif;
+                margin: 0;
+                padding: 0;
+                background-color: #f8f9fa;
+            }
+            
+            #visualization {
+                width: 100%;
+                height: 100vh;
+                overflow: hidden;
+            }
+            
+            .node {
+                cursor: pointer;
+            }
+            
+            .node circle {
+                fill: #fff;
+                stroke-width: 2px;
+            }
+            
+            .node text {
+                font-size: 12px;
+                font-family: 'Arial', sans-serif;
+            }
+            
+            .link {
+                fill: none;
+                stroke-width: 2px;
+            }
+            
+            .controls {
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                background: white;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                padding: 10px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                z-index: 1000;
+            }
+            
+            .controls button {
+                margin: 5px;
+                padding: 5px 10px;
+                background: #f1f1f1;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+            
+            .controls button:hover {
+                background: #e1e1e1;
+            }
+            
+            .tooltip {
+                position: absolute;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                border-radius: 4px;
+                font-size: 12px;
+                pointer-events: none;
+                opacity: 0;
+                z-index: 1000;
+                max-width: 300px;
+                overflow-wrap: break-word;
+            }
+            
+            #search-box {
+                margin-bottom: 10px;
+            }
+            
+            #search-input {
+                width: 100%;
+                padding: 5px;
+                box-sizing: border-box;
+            }
+            
+            .title {
+                position: absolute;
+                top: 20px;
+                left: 20px;
+                font-size: 16px;
+                font-weight: bold;
+                color: #333;
+                background: rgba(255, 255, 255, 0.8);
+                padding: 5px 10px;
+                border-radius: 5px;
+                z-index: 1000;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="title">Web Crawl Tree Visualization - {{ start_url }}</div>
+        <div id="visualization"></div>
+        
+        <div class="controls">
+            <div id="search-box">
+                <input type="text" id="search-input" placeholder="Search URLs...">
+            </div>
+            <button id="zoom-in">Zoom In</button>
+            <button id="zoom-out">Zoom Out</button>
+            <button id="reset">Reset View</button>
+            <button id="expand-all">Expand All</button>
+            <button id="collapse-all">Collapse All</button>
+        </div>
+        
+        <div class="tooltip" id="tooltip"></div>
+        
+        <script>
+        // Tree data from Python
+        const treeData = {{ tree_data }};
+        
+        // Set up the visualization
+        const margin = {top: 100, right: 90, bottom: 30, left: 90};
+        const width = window.innerWidth - margin.left - margin.right;
+        const height = window.innerHeight - margin.top - margin.bottom;
+        
+        // Create a color scale based on depth
+        const colorScale = d3.scaleSequential(d3.interpolateYlGnBu)
+            .domain([0, 10]);  // Adjust max depth as needed
+            
+        // Set up the tree layout - inverted for top-down
+        const tree = d3.tree()
+            .size([width, height])
+            .nodeSize([30, 120]);  // Adjust node spacing
+            
+        // Create SVG
+        const svg = d3.select("#visualization")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+            
+        // Create a group for the links and nodes
+        const gLink = svg.append("g")
+            .attr("class", "links");
+            
+        const gNode = svg.append("g")
+            .attr("class", "nodes");
+            
+        // Set up zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => {
+                svg.attr("transform", event.transform);
+            });
+            
+        d3.select("#visualization svg")
+            .call(zoom);
+            
+        // Handle collapse/expand
+        function toggleChildren(d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+            } else if (d._children) {
+                d.children = d._children;
+                d._children = null;
+            }
+            update(d);
+        }
+        
+        // Create root hierarchical data
+        const root = d3.hierarchy(treeData);
+        
+        // Set initial position at the top center
+        root.x0 = width / 2;
+        root.y0 = 0;
+        
+        // Initialize hidden children
+        root.descendants().forEach(d => {
+            if (d.depth > 1) {  // Only show first level by default
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                }
+            }
+        });
+        
+        // Main update function
+        function update(source) {
+            // Create tree layout
+            const treeLayout = tree(root);
+            
+            // Get nodes and links
+            const nodes = treeLayout.descendants();
+            const links = treeLayout.links();
+            
+            // Normalize for fixed-depth
+            nodes.forEach(d => {
+                d.y = d.depth * 180;  // Spacing between levels
+            });
+            
+            // Update the nodes
+            const node = gNode.selectAll(".node")
+                .data(nodes, d => d.data.id);
+                
+            // Enter new nodes
+            const nodeEnter = node.enter()
+                .append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${source.x0},${source.y0})`)
+                .on("click", (event, d) => {
+                    toggleChildren(d);
+                })
+                .on("mouseover", function(event, d) {
+                    d3.select(this).select("circle")
+                        .attr("r", 8)
+                        .style("stroke-width", "3px");
+                        
+                    const tooltip = d3.select("#tooltip");
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(`
+                        <strong>URL:</strong> ${d.data.id}<br>
+                        <strong>Depth:</strong> ${d.data.depth || d.depth}
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).select("circle")
+                        .attr("r", 6)
+                        .style("stroke-width", "2px");
+                        
+                    d3.select("#tooltip").transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+                
+            // Add Circle for the nodes
+            nodeEnter.append("circle")
+                .attr("r", 6)
+                .style("fill", d => d._children ? colorScale(d.depth) : "#fff")
+                .style("stroke", d => colorScale(d.depth));
+                
+            // Add labels for the nodes
+            nodeEnter.append("text")
+                .attr("dy", ".35em")
+                .attr("x", d => d.children || d._children ? -13 : 13)
+                .attr("text-anchor", d => d.children || d._children ? "end" : "start")
+                .text(d => d.data.name)
+                .style("fill-opacity", 0)
+                .style("font-size", "10px");
+                
+            // Update the nodes
+            const nodeUpdate = nodeEnter.merge(node);
+            
+            // Transition to the proper position
+            nodeUpdate.transition()
+                .duration(750)
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+                
+            // Update node attributes
+            nodeUpdate.select("circle")
+                .attr("r", 6)
+                .style("fill", d => d._children ? colorScale(d.depth) : "#fff")
+                .style("stroke", d => colorScale(d.depth));
+                
+            nodeUpdate.select("text")
+                .style("fill-opacity", 1);
+                
+            // Remove exiting nodes
+            const nodeExit = node.exit()
+                .transition()
+                .duration(750)
+                .attr("transform", d => `translate(${source.x},${source.y})`)
+                .remove();
+                
+            nodeExit.select("circle")
+                .attr("r", 0);
+                
+            nodeExit.select("text")
+                .style("fill-opacity", 0);
+                
+            // Update the links
+            const link = gLink.selectAll(".link")
+                .data(links, d => d.target.data.id);
+                
+            // Enter new links
+            const linkEnter = link.enter()
+                .append("path")
+                .attr("class", "link")
+                .attr("d", d => {
+                    const o = {x: source.x0, y: source.y0};
+                    return diagonal(o, o);
+                })
+                .style("stroke", d => colorScale(d.target.depth - 1))
+                .style("opacity", 0.5);
+                
+            // Update the links
+            const linkUpdate = linkEnter.merge(link);
+            
+            // Transition to proper position
+            linkUpdate.transition()
+                .duration(750)
+                .attr("d", d => diagonal(d.source, d.target))
+                .style("stroke", d => colorScale(d.target.depth - 1));
+                
+            // Remove any exiting links
+            link.exit()
+                .transition()
+                .duration(750)
+                .attr("d", d => {
+                    const o = {x: source.x, y: source.y};
+                    return diagonal(o, o);
+                })
+                .remove();
+                
+            // Store the old positions for transition
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+            
+            // Create curved path for the links
+            function diagonal(s, d) {
+                const path = `M ${s.x} ${s.y}
+                    C ${s.x} ${(s.y + d.y) / 2},
+                    ${d.x} ${(s.y + d.y) / 2},
+                    ${d.x} ${d.y}`;
+                return path;
+            }
+        }
+        
+        // Center the tree
+        const initialTransform = d3.zoomIdentity
+            .translate(width / 2, margin.top)
+            .scale(0.8);
+            
+        d3.select("#visualization svg")
+            .call(zoom.transform, initialTransform);
+            
+        // Control buttons
+        d3.select("#zoom-in").on("click", () => {
+            d3.select("#visualization svg")
+                .transition()
+                .call(zoom.scaleBy, 1.3);
+        });
+        
+        d3.select("#zoom-out").on("click", () => {
+            d3.select("#visualization svg")
+                .transition()
+                .call(zoom.scaleBy, 0.7);
+        });
+        
+        d3.select("#reset").on("click", () => {
+            d3.select("#visualization svg")
+                .transition()
+                .call(zoom.transform, initialTransform);
+        });
+        
+        d3.select("#expand-all").on("click", () => {
+            expandAll(root);
+            update(root);
+        });
+        
+        d3.select("#collapse-all").on("click", () => {
+            collapseAll(root);
+            update(root);
+        });
+        
+        function expandAll(d) {
+            if (d._children) {
+                d.children = d._children;
+                d._children = null;
+                d.children.forEach(expandAll);
+            } else if (d.children) {
+                d.children.forEach(expandAll);
+            }
+        }
+        
+        function collapseAll(d) {
+            if (d.children) {
+                if (d.depth > 0) {  // Don't collapse the root
+                    d._children = d.children;
+                    d.children = null;
+                } else if (d.children) {
+                    d.children.forEach(collapseAll);
+                }
+            }
+        }
+        
+        // Search functionality
+        d3.select("#search-input").on("input", function() {
+            const searchTerm = this.value.toLowerCase();
+            
+            // Reset all node styling
+            d3.selectAll(".node circle")
+                .style("stroke-width", "2px")
+                .style("stroke", d => colorScale(d.depth));
+                
+            if (searchTerm.length < 2) return;
+            
+            // Find and highlight nodes that match the search
+            d3.selectAll(".node").filter(d => {
+                return d.data.id.toLowerCase().includes(searchTerm);
+            }).select("circle")
+                .style("stroke-width", "4px")
+                .style("stroke", "red");
+        });
+        
+        // Initial update
+        update(root);
+        </script>
+    </body>
+    </html>
+    """
+    
+    # Replace template variables
+    import json
+    template_obj = Template(template)
+    return template_obj.render(
+        tree_data=json.dumps(tree_data),
+        start_url=start_url
+    ) 

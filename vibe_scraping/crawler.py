@@ -593,14 +593,14 @@ class WebCrawler:
         Generate a graph visualization of the crawled data.
         
         Args:
-            graph_type: Type of graph to generate ("page", "domain", or "interactive")
+            graph_type: Type of graph to generate ("tree", "page", "domain", or "interactive")
             title: Custom title for the graph
             output_file: Path to save the graph file
             
         Returns:
             Path to the generated graph file or None if generation fails
         """
-        graph_type = graph_type or self.graph_type or "page"
+        graph_type = graph_type or self.graph_type or "tree"  # Default to tree visualization
         title = title or self.graph_title
         
         try:
@@ -608,10 +608,16 @@ class WebCrawler:
             from .visualizer import (
                 generate_crawl_graph, 
                 generate_domain_graph, 
-                create_dynamic_graph
+                create_dynamic_graph,
+                create_tree_visualization
             )
             
-            if graph_type == "page":
+            if graph_type == "tree":
+                return create_tree_visualization(
+                    self.save_path,
+                    output_file=output_file
+                )
+            elif graph_type == "page":
                 return generate_crawl_graph(
                     self.save_path, 
                     output_file=output_file,
@@ -639,6 +645,10 @@ class WebCrawler:
             logger.error(f"Error generating graph: {str(e)}")
             return None
             
+    def generate_tree_visualization(self, output_file=None):
+        """Generate an interactive tree visualization with root at the top."""
+        return self.generate_graph_visualization("tree", None, output_file)
+        
     def generate_page_graph(self, title=None, output_file=None):
         """Generate a page-level graph visualization."""
         return self.generate_graph_visualization("page", title, output_file)
@@ -665,7 +675,7 @@ def crawl_site(
     use_scrapy=False,
     url_filter=None,
     generate_graph=False,
-    graph_type="page",
+    graph_type="tree",
     graph_title=None
 ):
     """
@@ -683,7 +693,7 @@ def crawl_site(
         use_scrapy: Use Scrapy for faster parallel crawling
         url_filter: Regular expression pattern for URLs to follow
         generate_graph: Whether to generate a graph visualization after crawling
-        graph_type: Type of graph to generate ("page", "domain", or "interactive")
+        graph_type: Type of graph to generate ("tree", "page", "domain", or "interactive")
         graph_title: Title for the graph visualization
     
     Returns:
@@ -732,6 +742,9 @@ if __name__ == "__main__":
     parser.add_argument("--selenium", action="store_true", help="Use Selenium for JavaScript rendering if needed")
     parser.add_argument("--scrapy", action="store_true", help="Use Scrapy for faster parallel crawling")
     parser.add_argument("--filter", help="Regular expression pattern for URLs to follow")
+    parser.add_argument("--graph", action="store_true", help="Generate a graph visualization")
+    parser.add_argument("--graph-type", choices=["tree", "page", "domain", "interactive"], 
+                        default="tree", help="Type of graph to generate")
     
     args = parser.parse_args()
     
@@ -746,7 +759,9 @@ if __name__ == "__main__":
         follow_subdomains=args.subdomains,
         use_selenium=args.selenium,
         use_scrapy=args.scrapy,
-        url_filter=args.filter
+        url_filter=args.filter,
+        generate_graph=args.graph,
+        graph_type=args.graph_type
     )
     
     # Print stats
