@@ -1,33 +1,15 @@
 """
-Streamlined web crawler focusing exclusively on deep Scrapy-based crawling.
-
-This module provides a simplified web crawler that:
-1. Uses Scrapy for efficient and fast crawling
-2. Focuses on deep crawling functionality without extra features
-3. Respects robots.txt and implements polite crawling
+Streamlined web crawler using Scrapy for deep crawling.
 """
 
 import os
-import logging
 from urllib.parse import urlparse
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from vibe_scraping.scrapy_adapter import crawl_with_scrapy, SCRAPY_AVAILABLE
 
 class WebCrawler:
     """
-    A streamlined web crawler focusing exclusively on deep Scrapy-based crawling.
-    
-    Args:
-        start_url (str): The URL to start crawling from
-        max_depth (int, optional): Maximum depth to crawl. Defaults to 5.
-        max_pages (int, optional): Maximum number of pages to crawl. Defaults to 1000.
-        follow_external_links (bool, optional): Whether to follow links to external domains. Defaults to False.
-        respect_robots_txt (bool, optional): Whether to respect robots.txt. Defaults to True.
-        user_agent (str, optional): User agent to use for requests. Defaults to None.
-        delay (float, optional): Delay between requests in seconds. Defaults to 0.1.
-        save_path (str, optional): Path to save crawled data. Defaults to "./crawl_data".
+    A streamlined web crawler using Scrapy.
     """
     
     def __init__(
@@ -50,70 +32,28 @@ class WebCrawler:
         self.delay = delay
         self.save_path = save_path
         
-        # Ensure the save path exists
-        if not os.path.exists(self.save_path):
-            os.makedirs(self.save_path)
-            
-        # Set up URL filters
+        os.makedirs(self.save_path, exist_ok=True)
         self.domain = urlparse(start_url).netloc
     
     def crawl(self):
-        """
-        Start the crawling process using Scrapy.
-        
-        Returns:
-            dict or int: Information about the crawl, including pages crawled
-        """
-        logger.info(f"Starting Scrapy crawl from {self.start_url}")
-        try:
-            from vibe_scraping.scrapy_adapter import crawl_with_scrapy
+        """Start crawling using Scrapy."""
+        if not SCRAPY_AVAILABLE:
+            raise ImportError("Scrapy is not installed. Install with: pip install scrapy")
             
-            return crawl_with_scrapy(
-                start_url=self.start_url,
-                save_path=self.save_path,
-                max_depth=self.max_depth,
-                max_pages=self.max_pages,
-                follow_external_links=self.follow_external_links,
-                respect_robots_txt=self.respect_robots_txt,
-                user_agent=self.user_agent,
-                delay=self.delay,
-                save_html=True,
-                generate_graph=False,
-                graph_type=None
-            )
-        except ImportError as e:
-            logger.error("Scrapy is not installed. Please install with: pip install scrapy")
-            raise e
-        except Exception as e:
-            logger.error(f"Error using Scrapy: {str(e)}")
-            raise e
+        return crawl_with_scrapy(
+            start_url=self.start_url,
+            save_path=self.save_path,
+            max_depth=self.max_depth,
+            max_pages=self.max_pages,
+            follow_external_links=self.follow_external_links,
+            respect_robots_txt=self.respect_robots_txt,
+            user_agent=self.user_agent,
+            delay=self.delay
+        )
 
-def crawl_site(
-    start_url,
-    output_dir="crawled_data",
-    max_depth=5,
-    max_pages=1000,
-    delay=0.1,
-    follow_external_links=False,
-    respect_robots_txt=True,
-    user_agent=None
-):
-    """
-    Simplified helper function to crawl a website using Scrapy.
-    
-    Args:
-        start_url (str): URL to start crawling from
-        output_dir (str): Directory to save crawled data
-        max_depth (int): Maximum depth to crawl
-        max_pages (int): Maximum number of pages to crawl
-        delay (float): Delay between requests in seconds
-        follow_external_links (bool): Whether to follow external links
-        respect_robots_txt (bool): Whether to respect robots.txt
-        user_agent (str): User agent string to use
-        
-    Returns:
-        dict or int: Crawl results including pages crawled
-    """
+def crawl_site(start_url, output_dir="crawled_data", max_depth=5, max_pages=1000, 
+               delay=0.1, follow_external_links=False, respect_robots_txt=True, user_agent=None):
+    """Convenience function to crawl a website."""
     crawler = WebCrawler(
         start_url=start_url,
         max_depth=max_depth,

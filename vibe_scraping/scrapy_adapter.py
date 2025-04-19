@@ -31,7 +31,7 @@ except ImportError:
 # Only define the spider class if Scrapy is available
 if SCRAPY_AVAILABLE:
     class VibeCrawlSpider(CrawlSpider):
-        """Scrapy spider implementing the vibe-scraping crawler logic."""
+        """Scrapy spider for deep web crawling."""
         
         name = "vibe_scraper"
         
@@ -42,7 +42,6 @@ if SCRAPY_AVAILABLE:
             self.max_depth = kwargs.pop('max_depth', 5)
             self.follow_subdomains = kwargs.pop('follow_subdomains', False)
             self.respect_robots = kwargs.pop('respect_robots', True)
-            self.url_pattern = kwargs.pop('url_pattern', None)
             self.save_path = kwargs.pop('save_path', 'crawled_data')
             
             # Create a save directory if it doesn't exist
@@ -65,38 +64,15 @@ if SCRAPY_AVAILABLE:
             allowed_domains = [self.base_domain] if not self.follow_subdomains else None
             
             # Create rules based on the parameters
-            rules = []
-            
-            if self.url_pattern:
-                # If URL pattern is specified, only follow links that match it
-                rules.append(
-                    Rule(
-                        LinkExtractor(
-                            allow=[self.url_pattern], 
-                            deny_extensions=[],
-                            unique=True
-                        ),
-                        callback='parse_item',
-                        follow=True,
-                        process_links='process_links',
-                        cb_kwargs={'depth': 1}
-                    )
+            rules = [
+                Rule(
+                    LinkExtractor(allow=[], deny_extensions=[], unique=True),
+                    callback='parse_item',
+                    follow=True,
+                    process_links='process_links',
+                    cb_kwargs={'depth': 1}
                 )
-            else:
-                # Otherwise, follow all links within the allowed domains
-                rules.append(
-                    Rule(
-                        LinkExtractor(
-                            allow=[], 
-                            deny_extensions=[],
-                            unique=True
-                        ),
-                        callback='parse_item',
-                        follow=True,
-                        process_links='process_links',
-                        cb_kwargs={'depth': 1}
-                    )
-                )
+            ]
             
             # Set allowed domains
             if allowed_domains:
@@ -133,7 +109,6 @@ if SCRAPY_AVAILABLE:
             return {
                 "last_crawl": None,
                 "crawled_urls": {},
-                "url_frontier": [],
                 "pages_crawled": 0,
                 "start_url": self.start_url
             }
@@ -176,8 +151,7 @@ if SCRAPY_AVAILABLE:
                 
                 try:
                     # Normalize the URL
-                    url = link.url
-                    url = urldefrag(url)[0]  # Remove fragments
+                    url = urldefrag(link.url)[0]  # Remove fragments
                     
                     # Remove trailing slashes for consistency
                     if url.endswith('/'):

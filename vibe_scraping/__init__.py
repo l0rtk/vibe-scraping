@@ -1,10 +1,4 @@
-"""Vibe Scraping - A streamlined library for deep web crawling using Scrapy.
-
-This package provides tools for:
-- Efficient deep web crawling using Scrapy
-- Configurable crawl depth and page limits  
-- Politeness controls (robots.txt, delays)
-"""
+"""Vibe Scraping - Lightweight deep web crawler using Scrapy."""
 
 __version__ = "0.3.0"
 
