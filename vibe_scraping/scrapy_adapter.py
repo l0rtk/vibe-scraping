@@ -349,11 +349,42 @@ def crawl_with_scrapy(
             from .visualizer import (
                 generate_crawl_graph, 
                 generate_domain_graph, 
-                create_dynamic_graph
+                create_dynamic_graph,
+                create_tree_visualization
             )
             
             graph_path = None
-            if graph_type == "page":
+            if graph_type == "tree":
+                # Create a special case for tree visualization to ensure start_url is properly included
+                try:
+                    # First load the metadata
+                    metadata_file = os.path.join(output_dir, "metadata.json")
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Make sure the start URL is properly recorded in the metadata
+                    if "crawled_urls" in metadata:
+                        # Ensure start_url is present in the crawled_urls
+                        if start_url not in metadata["crawled_urls"]:
+                            # Add start URL to crawled_urls if missing
+                            metadata["crawled_urls"][start_url] = {
+                                "last_visit": datetime.now().isoformat(),
+                                "depth": 0,
+                                "hash": hashlib.md5(start_url.encode()).hexdigest(),
+                                "links": list(metadata["crawled_urls"].keys())[:10],  # Link to first 10 pages
+                                "text_length": 0
+                            }
+                            
+                            # Save updated metadata
+                            with open(metadata_file, 'w') as f:
+                                json.dump(metadata, f, indent=2)
+                    
+                    # Now create the tree visualization
+                    graph_path = create_tree_visualization(output_dir)
+                except Exception as e:
+                    logger.error(f"Error in tree visualization: {str(e)}")
+                    graph_path = None
+            elif graph_type == "page":
                 graph_path = generate_crawl_graph(
                     output_dir, 
                     title=graph_title or f"Web Crawl Graph - {start_url}"

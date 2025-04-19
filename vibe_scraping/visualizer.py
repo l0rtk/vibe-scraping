@@ -705,15 +705,24 @@ def create_tree_visualization(crawl_data_path, output_file=None):
             if child in parent_chain:
                 continue
                 
-            child_node = {
-                "id": child,
-                "name": _get_display_name(child),
-                "depth": crawled_urls.get(child, {}).get('depth', 999),
-                "children": [],
-                "parent": tree_node
-            }
-            tree_node["children"].append(child_node)
-            build_tree(child, child_node, current_depth + 1, max_depth)
+            # Only add nodes that were actually crawled
+            if child in crawled_urls:
+                # Check if the depth of this child is actually one more than the current node
+                parent_depth = crawled_urls.get(node_id, {}).get('depth', 0)
+                child_depth = crawled_urls.get(child, {}).get('depth', 999)
+                
+                # Only add this child if its depth is one more than the parent
+                # or if the parent is the start URL and the child has depth 1
+                if (child_depth == parent_depth + 1) or (node_id == start_url and child_depth == 1):
+                    child_node = {
+                        "id": child,
+                        "name": _get_display_name(child),
+                        "depth": child_depth,
+                        "children": [],
+                        "parent": tree_node
+                    }
+                    tree_node["children"].append(child_node)
+                    build_tree(child, child_node, current_depth + 1, max_depth)
     
     # Start building the tree from the root
     build_tree(start_url, tree_data)
