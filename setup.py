@@ -7,7 +7,7 @@ setup(
     name="vibe-scraping",
     version="0.1.0",
     author="Luka",
-    author_email="your.email@example.com",
+    author_email="lukalortkipanidze1@gmail.com",
     description="A library for scraping product information from websites using Groq API",
     long_description=long_description,
     long_description_content_type="text/markdown",
