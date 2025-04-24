@@ -30,6 +30,55 @@ def crawl_website():
     print(f"Crawled {pages} pages to {crawl_data_path}")
     return crawl_data_path
 
+def custom_processor(url, html_content, soup, metadata):
+    """
+    Custom HTML processor that extracts specific information.
+    This is an example that can be replaced with any custom processing logic.
+    
+    Args:
+        url: The URL of the page
+        html_content: Raw HTML content
+        soup: BeautifulSoup object of the page
+        metadata: Page metadata
+        
+    Returns:
+        Dictionary with processing results
+    """
+    # Get page title
+    title = soup.title.text if soup.title else "No title"
+    
+    # Extract text from paragraphs using soup
+    paragraphs_text = ' '.join([p.get_text() for p in soup.find_all('p')])
+    
+    # Also measure the total HTML content length
+    html_length = len(html_content)
+    
+    # Count words in paragraph text
+    word_count = len(paragraphs_text.split())
+    
+    # Count links
+    links = [a['href'] for a in soup.find_all('a', href=True)]
+    
+    # Get headings
+    headings = []
+    for tag in ['h1', 'h2', 'h3']:
+        for heading in soup.find_all(tag):
+            headings.append({
+                'level': tag,
+                'text': heading.get_text().strip()
+            })
+    
+    return {
+        "url": url,
+        "title": title,
+        "html_size_bytes": html_length,
+        "word_count": word_count,
+        "link_count": len(links),
+        "headings_count": len(headings),
+        "headings": headings[:5],  # Just show first 5 headings
+        "crawl_depth": metadata.get("depth", 0)
+    }
+
 def process_content(crawl_dir):
     # Save processing results inside the crawl_data directory
     process_output = os.path.join(crawl_dir, "process_results.json")
@@ -40,8 +89,8 @@ def process_content(crawl_dir):
     # Load metadata
     processor.load_metadata()
     
-    # Process all pages
-    processor.process_all()
+    # Apply custom processor to all pages
+    processor.apply_custom_processor(custom_processor)
     
     # Get statistics
     stats = processor.get_statistics()
@@ -67,8 +116,9 @@ def main():
     if stats:
         print("\nProcessing completed:")
         print(f"Total pages processed: {stats['total_pages_processed']}")
-        print(f"Total words extracted: {stats['total_words']}")
-        print(f"Average words per page: {stats['average_words_per_page']:.2f}")
+        if 'total_words' in stats:
+            print(f"Total words extracted: {stats['total_words']}")
+            print(f"Average words per page: {stats['average_words_per_page']:.2f}")
         print(f"\nDetailed results saved to: {stats['output_file']}")
 
 if __name__ == "__main__":
