@@ -4,7 +4,7 @@ from vibe_scraping.crawler import WebCrawler
 crawler = WebCrawler(
     start_url="https://newshub.ge",
     max_depth=10,
-    max_pages=10000,
+    max_pages=10,
     respect_robots_txt=False,
 )
 
