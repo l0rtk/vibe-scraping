@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Complete pipeline for crawling a website and analyzing the HTML content.
-This script combines functionality from basic_crawler.py and analyze_crawled_html.py.
+Complete pipeline for crawling a website and processing the HTML content.
+This script combines functionality from basic_crawler.py and html_processor.py.
 """
 
 import os
 from vibe_scraping.crawler import WebCrawler
-from vibe_scraping.html_analyzer import HTMLAnalyzer
+from vibe_scraping.html_processor import HTMLProcessor
 
 def crawl_website():
     # Configuration parameters
@@ -30,26 +30,26 @@ def crawl_website():
     print(f"Crawled {pages} pages to {crawl_data_path}")
     return crawl_data_path
 
-def analyze_content(crawl_dir):
-    # Save analysis results inside the crawl_data directory
-    analysis_output = os.path.join(crawl_dir, "analysis_results.json")
+def process_content(crawl_dir):
+    # Save processing results inside the crawl_data directory
+    process_output = os.path.join(crawl_dir, "process_results.json")
     
-    print("\nAnalyzing crawled HTML content...")
-    analyzer = HTMLAnalyzer(crawl_dir)
+    print("\nProcessing crawled HTML content...")
+    processor = HTMLProcessor(crawl_dir)
     
     # Load metadata
-    analyzer.load_metadata()
+    processor.load_metadata()
     
-    # Analyze all pages
-    analyzer.analyze_all()
+    # Process all pages
+    processor.process_all()
     
     # Get statistics
-    stats = analyzer.get_statistics()
+    stats = processor.get_statistics()
     
     # Save results
-    analyzer.save_results(analysis_output)
+    processor.save_results(process_output)
     
-    stats['output_file'] = analysis_output
+    stats['output_file'] = process_output
     return stats
 
 def main():
@@ -60,13 +60,13 @@ def main():
     # Step 1: Crawl the website
     crawl_dir = crawl_website()
     
-    # Step 2: Analyze the content
-    stats = analyze_content(crawl_dir)
+    # Step 2: Process the content
+    stats = process_content(crawl_dir)
     
     # Step 3: Print summary
     if stats:
-        print("\nAnalysis completed:")
-        print(f"Total pages analyzed: {stats['total_pages_analyzed']}")
+        print("\nProcessing completed:")
+        print(f"Total pages processed: {stats['total_pages_processed']}")
         print(f"Total words extracted: {stats['total_words']}")
         print(f"Average words per page: {stats['average_words_per_page']:.2f}")
         print(f"\nDetailed results saved to: {stats['output_file']}")
