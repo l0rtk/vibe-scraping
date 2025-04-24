@@ -19,11 +19,21 @@ except ImportError:
     HTMLAnalyzer = None
     analyze_html_content = None
 
+# Import processor functions
+try:
+    from .html_processor import HTMLProcessor, process_html_content
+except ImportError:
+    # If BeautifulSoup is not available
+    HTMLProcessor = None
+    process_html_content = None
+
 __all__ = [
     'WebCrawler',
     'crawl_site',
     'SCRAPY_AVAILABLE',
     'crawl_with_scrapy',
     'HTMLAnalyzer',
-    'analyze_html_content'
+    'analyze_html_content',
+    'HTMLProcessor',
+    'process_html_content'
 ]

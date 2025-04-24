@@ -1,5 +1,5 @@
 """
-HTML content analyzer for vibe-scraping.
+HTML content processor for vibe-scraping.
 Parses the metadata.json file and extracts text from crawled HTML.
 """
 
@@ -14,12 +14,12 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class HTMLAnalyzer:
-    """Analyzer for extracting and processing text from crawled HTML files."""
+class HTMLProcessor:
+    """Processor for extracting and processing text from crawled HTML files."""
     
     def __init__(self, crawl_data_path="./data/crawl_data"):
         """
-        Initialize the analyzer.
+        Initialize the processor.
         
         Args:
             crawl_data_path: Path to the directory containing crawled data and metadata.json
@@ -64,16 +64,16 @@ class HTMLAnalyzer:
         
         return text
     
-    def analyze_page(self, url, hash_value):
+    def process_page(self, url, hash_value):
         """
-        Analyze a single page from the crawl data.
+        Process a single page from the crawl data.
         
         Args:
             url: The URL of the page
             hash_value: The hash directory name containing the page data
             
         Returns:
-            Dictionary with analysis results for the page
+            Dictionary with processing results for the page
         """
         page_dir = self.crawl_data_path / hash_value
         html_path = page_dir / "page.html"
@@ -94,7 +94,7 @@ class HTMLAnalyzer:
         # Extract text
         text = self.extract_text_from_html(html_content)
         
-        # Basic analysis
+        # Basic processing
         word_count = len(text.split())
         char_count = len(text)
         
@@ -110,12 +110,12 @@ class HTMLAnalyzer:
         
         return result
     
-    def analyze_all(self):
+    def process_all(self):
         """
-        Analyze all pages in the crawl data.
+        Process all pages in the crawl data.
         
         Returns:
-            Dictionary with analysis results for all pages
+            Dictionary with processing results for all pages
         """
         if not self.metadata:
             self.load_metadata()
@@ -124,7 +124,7 @@ class HTMLAnalyzer:
         crawled_urls = self.metadata.get("crawled_urls", {})
         total_urls = len(crawled_urls)
         
-        logger.info(f"Starting analysis of {total_urls} URLs")
+        logger.info(f"Starting processing of {total_urls} URLs")
         
         for i, (url, data) in enumerate(crawled_urls.items()):
             if i % 10 == 0:
@@ -135,7 +135,7 @@ class HTMLAnalyzer:
                 logger.warning(f"No hash found for URL: {url}")
                 continue
             
-            result = self.analyze_page(url, hash_value)
+            result = self.process_page(url, hash_value)
             if result:
                 results[url] = result
         
@@ -144,13 +144,13 @@ class HTMLAnalyzer:
     
     def get_statistics(self):
         """
-        Generate overall statistics from the analysis results.
+        Generate overall statistics from the processing results.
         
         Returns:
             Dictionary with overall statistics
         """
         if not self.results:
-            logger.warning("No analysis results available. Run analyze_all() first.")
+            logger.warning("No processing results available. Run process_all() first.")
             return {}
         
         total_pages = len(self.results)
@@ -163,7 +163,7 @@ class HTMLAnalyzer:
         depth_counter = Counter(depths)
         
         stats = {
-            "total_pages_analyzed": total_pages,
+            "total_pages_processed": total_pages,
             "total_words": total_words,
             "total_characters": total_chars,
             "average_words_per_page": avg_words_per_page,
@@ -173,15 +173,15 @@ class HTMLAnalyzer:
         
         return stats
     
-    def save_results(self, output_path="./analysis_results.json"):
+    def save_results(self, output_path="./process_results.json"):
         """
-        Save analysis results to a JSON file.
+        Save processing results to a JSON file.
         
         Args:
             output_path: Path to save the results
         """
         if not self.results:
-            logger.warning("No analysis results available. Run analyze_all() first.")
+            logger.warning("No processing results available. Run process_all() first.")
             return
         
         output = {
@@ -195,41 +195,41 @@ class HTMLAnalyzer:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(output, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"Analysis results saved to {output_path}")
+        logger.info(f"Processing results saved to {output_path}")
 
-def analyze_html_content(crawl_data_path="./data/crawl_data", output_path="./data/analysis/analysis_results.json"):
+def process_html_content(crawl_data_path="./data/crawl_data", output_path="./data/process/process_results.json"):
     """
-    Convenience function to analyze crawled data.
+    Convenience function to process crawled data.
     
     Args:
         crawl_data_path: Path to the crawled data directory
-        output_path: Path to save the analysis results
+        output_path: Path to save the processing results
         
     Returns:
-        Dictionary with analysis statistics
+        Dictionary with processing statistics
     """
-    analyzer = HTMLAnalyzer(crawl_data_path)
-    analyzer.load_metadata()
-    analyzer.analyze_all()
-    stats = analyzer.get_statistics()
-    analyzer.save_results(output_path)
+    processor = HTMLProcessor(crawl_data_path)
+    processor.load_metadata()
+    processor.process_all()
+    stats = processor.get_statistics()
+    processor.save_results(output_path)
     
     return stats
 
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Analyze crawled HTML content")
+    parser = argparse.ArgumentParser(description="Process crawled HTML content")
     parser.add_argument("--input", default="./data/crawl_data", help="Path to crawled data directory")
-    parser.add_argument("--output", default="./data/analysis/analysis_results.json", help="Path to save analysis results")
+    parser.add_argument("--output", default="./data/process/process_results.json", help="Path to save processing results")
     
     args = parser.parse_args()
     
-    stats = analyze_html_content(args.input, args.output)
+    stats = process_html_content(args.input, args.output)
     
     # Print some basic stats
-    print("\nAnalysis completed:")
-    print(f"Total pages analyzed: {stats['total_pages_analyzed']}")
+    print("\nProcessing completed:")
+    print(f"Total pages processed: {stats['total_pages_processed']}")
     print(f"Total words extracted: {stats['total_words']}")
     print(f"Average words per page: {stats['average_words_per_page']:.2f}")
     print(f"Results saved to: {args.output}") 
