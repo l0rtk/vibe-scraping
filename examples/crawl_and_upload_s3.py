@@ -9,6 +9,7 @@ import logging
 import boto3
 import sys
 import shutil
+import hashlib
 from botocore.exceptions import ClientError, NoCredentialsError
 from vibe_scraping.crawler import WebCrawler
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ S3_PREFIX = "crawler_data/newshub"
 MAX_PAGES = 10
 MAX_DEPTH = 5
 REMOVE_LOCAL_FILES = True  # Set to False if you want to keep local files
+SKIP_EXISTING = True       # Set to True to skip files that already exist in S3
 # ============================
 
 # Set up logging
@@ -100,10 +102,38 @@ except Exception as e:
 # Track upload statistics
 files_uploaded = 0
 bytes_uploaded = 0
+files_skipped = 0
+
+# Helper function to check if a file exists in S3
+def file_exists_in_s3(s3_key):
+    try:
+        s3.head_object(Bucket=BUCKET, Key=s3_key)
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == '404':
+            return False
+        else:
+            logger.error(f"Error checking if file exists in S3: {e}")
+            return False
+
+# Helper function to calculate file MD5 hash
+def calculate_md5(file_path):
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
 
 # Helper function to upload a file to S3
 def upload_file(file_path, s3_key):
-    global files_uploaded, bytes_uploaded
+    global files_uploaded, bytes_uploaded, files_skipped
+    
+    # Check if file already exists in S3 and should be skipped
+    if SKIP_EXISTING and file_exists_in_s3(s3_key):
+        logger.info(f"Skipping {file_path} - already exists in S3")
+        files_skipped += 1
+        return True
+    
     try:
         file_size = os.path.getsize(file_path)
         logger.info(f"Uploading {file_path} to s3://{BUCKET}/{s3_key}")
@@ -152,6 +182,7 @@ if REMOVE_LOCAL_FILES and os.path.exists(local_dir):
 print("\nCrawl and upload summary:")
 print(f"Crawled {pages} pages from {URL}")
 print(f"Uploaded {files_uploaded} files ({bytes_uploaded / (1024*1024):.2f} MB)")
+print(f"Skipped {files_skipped} existing files")
 print(f"Files stored in S3 bucket: {BUCKET}/{S3_PREFIX}")
 if REMOVE_LOCAL_FILES:
     print(f"Local directory {local_dir} {'removed' if not os.path.exists(local_dir) else 'could not be removed'}") 
