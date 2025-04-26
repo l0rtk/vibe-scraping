@@ -37,7 +37,7 @@ crawler = WebCrawler(
 )
 
 result = crawler.crawl()
-print(f"Crawled {result['pages_crawled']} pages")
+print(f"Crawled {result['pages_crawled']} pages!")
 ```
 
 ## Command Line Usage
