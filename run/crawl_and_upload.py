@@ -32,7 +32,7 @@ def extract_domain(url):
 
 def crawler_func(websites, 
                 bucket="first-hapttic-bucket", 
-                max_pages=500, 
+                max_pages=5000, 
                 max_depth=5, 
                 remove_local_files=True, 
                 skip_existing=True,
