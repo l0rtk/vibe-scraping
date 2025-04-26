@@ -159,33 +159,28 @@ def crawler_func(website,
     files_uploaded = 0
     bytes_uploaded = 0
     files_skipped = 0
-
-    # Helper function to check if a file exists in S3
-    def file_exists_in_s3(s3_key):
+    
+    # Get all existing objects in the S3 prefix for efficient checking
+    existing_s3_objects = set()
+    if skip_existing:
+        logger.info(f"Fetching existing objects in s3://{bucket}/{s3_prefix}")
         try:
-            s3.head_object(Bucket=bucket, Key=s3_key)
-            return True
-        except ClientError as e:
-            if e.response['Error']['Code'] == '404':
-                return False
-            else:
-                logger.error(f"Error checking if file exists in S3: {e}")
-                return False
-
-    # Helper function to calculate file MD5 hash
-    def calculate_md5(file_path):
-        hash_md5 = hashlib.md5()
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_md5.update(chunk)
-        return hash_md5.hexdigest()
+            paginator = s3.get_paginator('list_objects_v2')
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=s3_prefix)
+            for page in page_iterator:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        existing_s3_objects.add(obj['Key'])
+            logger.info(f"Found {len(existing_s3_objects)} existing objects in S3")
+        except Exception as e:
+            logger.warning(f"Error fetching existing S3 objects: {e}. Will check files individually.")
 
     # Helper function to upload a file to S3
     def upload_file(file_path, s3_key):
         nonlocal files_uploaded, bytes_uploaded, files_skipped
         
         # Check if file already exists in S3 and should be skipped
-        if skip_existing and file_exists_in_s3(s3_key):
+        if skip_existing and s3_key in existing_s3_objects:
             logger.info(f"Skipping {file_path} - already exists in S3")
             files_skipped += 1
             return True
