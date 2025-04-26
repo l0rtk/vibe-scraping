@@ -4,10 +4,10 @@ Simple pipeline for crawling a website and processing the HTML content.
 """
 
 from vibe_scraping.crawler import WebCrawler
-from vibe_scraping.html_processor import HTMLProcessor, process_html_content
+from vibe_scraping.html_processor import process_html_content
 
-# Define a custom processor function
-def extract_key_info(url, html_content, soup):
+# Define a custom processor function - must include all four parameters
+def extract_key_info(url, html_content, soup, metadata):
     """Extract just the essential information from a page"""
     return {
         "url": url,
@@ -35,5 +35,9 @@ stats = process_html_content(
 )
 
 # Step 3: Display results
-print(f"\nProcessed {stats['total_pages_processed']} pages")
+print("\nProcessing complete!")
+if stats and 'total_pages_processed' in stats:
+    print(f"Processed {stats['total_pages_processed']} pages")
+else:
+    print("No pages were processed")
 print(f"Results saved to: ./crawl_data/process_results.json")
