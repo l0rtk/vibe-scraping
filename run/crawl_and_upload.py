@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from botocore.exceptions import ClientError, NoCredentialsError
 from vibe_scraping.crawler import WebCrawler
 from dotenv import load_dotenv
+from boto3.s3.transfer import TransferConfig
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def crawler_func(website, 
                 bucket="first-hapttic-bucket", 
-                max_pages=10, 
+                max_pages=300, 
                 max_depth=5, 
                 remove_local_files=True, 
                 skip_existing=True):
@@ -54,6 +55,7 @@ def crawler_func(website,
         start_url=website,
         max_depth=max_depth,
         max_pages=max_pages,
+
         respect_robots_txt=False,
         save_path=local_dir
     )
@@ -88,6 +90,14 @@ def crawler_func(website,
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             aws_session_token=aws_session_token if aws_session_token else None
+        )
+        
+        # Configure transfer configuration for parallel uploads
+        transfer_config = TransferConfig(
+            multipart_threshold=8 * 1024 * 1024,  # 8MB
+            max_concurrency=10,                   # 10 threads
+            multipart_chunksize=8 * 1024 * 1024,  # 8MB
+            use_threads=True
         )
         
         # Test credentials by listing buckets
@@ -183,7 +193,12 @@ def crawler_func(website,
         try:
             file_size = os.path.getsize(file_path)
             logger.info(f"Uploading {file_path} to s3://{bucket}/{s3_key}")
-            s3.upload_file(file_path, bucket, s3_key)
+            s3.upload_file(
+                file_path, 
+                bucket, 
+                s3_key,
+                Config=transfer_config
+            )
             files_uploaded += 1
             bytes_uploaded += file_size
             return True
