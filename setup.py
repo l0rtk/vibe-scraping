@@ -25,6 +25,7 @@ setup(
         "groq",
         "python-dotenv",
         "selenium",
+        "boto3",
     ],
     extras_require={
         "advanced": ["undetected-chromedriver", "webdriver-manager"],
