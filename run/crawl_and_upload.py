@@ -6,10 +6,7 @@ Crawler module that provides a function to crawl a website and upload data to S3
 import os
 import logging
 import boto3
-import sys
 import shutil
-import hashlib
-import json
 from urllib.parse import urlparse
 from botocore.exceptions import ClientError, NoCredentialsError
 from vibe_scraping.crawler import WebCrawler
@@ -24,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def crawler_func(website, 
                 bucket="first-hapttic-bucket", 
-                max_pages=1000, 
+                max_pages=10, 
                 max_depth=5, 
                 remove_local_files=True, 
                 skip_existing=True,
