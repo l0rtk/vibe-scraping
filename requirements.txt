@@ -90,7 +90,7 @@ typing-inspection==0.4.0
 typing_extensions==4.13.2
 undetected-chromedriver==3.5.5
 urllib3==2.4.0
--e git+https://github.com/hapttic/vibe-scraping.git@cdedb15d2294412c1aea14b0a1cbc0ea7bf53034#egg=vibe_scraping
+# No local installation needed
 w3lib==2.3.1
 wcwidth==0.2.13
 webdriver-manager==4.0.1

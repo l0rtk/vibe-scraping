@@ -37,7 +37,7 @@ crawler = WebCrawler(
 )
 
 result = crawler.crawl()
-print(f"Crawled {result['pages_crawled']} pages")
+print(f"Crawled {result['pages_crawled']} pages!")
 ```
 
 ## Command Line Usage
@@ -48,6 +48,21 @@ python -m vibe_scraping.cli https://example.com -o crawled_data -d 3 -p 100
 
 # Show help
 python -m vibe_scraping.cli --help
+```
+
+### Docker
+
+```
+docker build -t vibe-scraper .
+
+docker run --name vibe-scraper \
+  -v "$(pwd)/crawler_data:/app/data_to_upload" \
+  vibe-scraper \
+  --websites https://alia.ge \
+  --max-pages 100 \
+  --max-depth 3 \
+  --bucket second-hapttic-bucket
+
 ```
 
 ## License
