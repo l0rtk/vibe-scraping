@@ -9,6 +9,7 @@ import boto3
 import sys
 import shutil
 import hashlib
+import json
 from urllib.parse import urlparse
 from botocore.exceptions import ClientError, NoCredentialsError
 from vibe_scraping.crawler import WebCrawler
@@ -23,10 +24,11 @@ logger = logging.getLogger(__name__)
 
 def crawler_func(website, 
                 bucket="first-hapttic-bucket", 
-                max_pages=300, 
+                max_pages=1000, 
                 max_depth=5, 
                 remove_local_files=True, 
-                skip_existing=True):
+                skip_existing=True,
+                force_fresh_crawl=True):
     """
     Crawls a website and uploads the data to an S3 bucket.
     
@@ -37,6 +39,7 @@ def crawler_func(website,
         max_depth (int): Maximum depth to crawl
         remove_local_files (bool): Whether to remove local files after upload
         skip_existing (bool): Whether to skip existing files in S3
+        force_fresh_crawl (bool): Whether to force a fresh crawl by disabling HTTP cache
         
     Returns:
         dict: Summary of the crawl and upload operation
@@ -50,14 +53,14 @@ def crawler_func(website,
     local_dir = "./data_to_upload"
     os.makedirs(local_dir, exist_ok=True)
 
-    # Create and run crawler
+    # Create and run crawler with force_fresh_crawl option
     crawler = WebCrawler(
         start_url=website,
         max_depth=max_depth,
         max_pages=max_pages,
-
         respect_robots_txt=False,
-        save_path=local_dir
+        save_path=local_dir,
+        force_fresh_crawl=force_fresh_crawl
     )
 
     result = crawler.crawl()

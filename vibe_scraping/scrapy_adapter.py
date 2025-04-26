@@ -43,12 +43,22 @@ if SCRAPY_AVAILABLE:
             self.follow_subdomains = kwargs.pop('follow_subdomains', False)
             self.respect_robots = kwargs.pop('respect_robots', True)
             self.save_path = kwargs.pop('save_path', 'crawled_data')
+            self.force_recrawl = kwargs.pop('force_recrawl', True)
             
             # Create a save directory if it doesn't exist
             os.makedirs(self.save_path, exist_ok=True)
             
             # Initialize metadata
             self.metadata_file = os.path.join(self.save_path, "metadata.json")
+            
+            # If forcing recrawl, delete the metadata file if it exists
+            if self.force_recrawl and os.path.exists(self.metadata_file):
+                logger.info(f"Force recrawl: removing existing metadata file {self.metadata_file}")
+                try:
+                    os.remove(self.metadata_file)
+                except Exception as e:
+                    logger.warning(f"Failed to remove metadata file: {e}")
+            
             self.metadata = self._load_metadata()
             
             # Setup the start URLs
@@ -254,7 +264,9 @@ def crawl_with_scrapy(
     additional_settings=None,
     save_html=True,
     generate_graph=False,
-    graph_type=None
+    graph_type=None,
+    enable_caching=False,
+    force_recrawl=True
 ):
     """
     Crawl a website using Scrapy.
@@ -272,6 +284,8 @@ def crawl_with_scrapy(
         save_html: Whether to save HTML content (always True in this version)
         generate_graph: Not used in this version
         graph_type: Not used in this version
+        enable_caching: Whether to enable HTTP caching (default: False)
+        force_recrawl: Force recrawling pages even if they have been visited before
         
     Returns:
         Dictionary with crawl statistics or int with pages crawled count
@@ -285,6 +299,16 @@ def crawl_with_scrapy(
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     
+    # If force_recrawl, clear Scrapy's HTTP cache if it exists
+    httpcache_dir = os.path.join(save_path, "httpcache")
+    if force_recrawl and os.path.exists(httpcache_dir):
+        logger.info(f"Force recrawl: clearing HTTP cache directory {httpcache_dir}")
+        try:
+            import shutil
+            shutil.rmtree(httpcache_dir)
+        except Exception as e:
+            logger.warning(f"Failed to clear HTTP cache: {e}")
+    
     # Set up a Scrapy project
     settings = {
         'USER_AGENT': user_agent or 'vibe-scraper (+https://github.com/l0rtk/vibe-scraping)',
@@ -296,7 +320,7 @@ def crawl_with_scrapy(
         'SCHEDULER_DISK_QUEUE': 'scrapy.squeues.PickleFifoDiskQueue',
         'SCHEDULER_MEMORY_QUEUE': 'scrapy.squeues.FifoMemoryQueue',
         'COOKIES_ENABLED': True,
-        'HTTPCACHE_ENABLED': True,
+        'HTTPCACHE_ENABLED': enable_caching,  # Default to False
         'HTTPCACHE_EXPIRATION_SECS': 43200,  # 12 hours
         'HTTPCACHE_DIR': 'httpcache',
         'HTTPCACHE_IGNORE_HTTP_CODES': [503, 504, 505, 500, 400, 401, 402, 403, 404],
@@ -306,7 +330,9 @@ def crawl_with_scrapy(
         'CONCURRENT_REQUESTS_PER_DOMAIN': 8,
         'RETRY_ENABLED': True,
         'RETRY_TIMES': 3,
-        'RETRY_HTTP_CODES': [500, 502, 503, 504, 408]
+        'RETRY_HTTP_CODES': [500, 502, 503, 504, 408],
+        # Use BaseDupeFilter with force_recrawl to avoid skipping URLs
+        'DUPEFILTER_CLASS': 'scrapy.dupefilters.BaseDupeFilter' if force_recrawl else 'scrapy.dupefilters.RFPDupeFilter',
     }
     
     # Update with additional settings if provided
@@ -323,7 +349,8 @@ def crawl_with_scrapy(
         max_depth=max_depth,
         follow_subdomains=follow_external_links,
         respect_robots=respect_robots_txt,
-        save_path=save_path
+        save_path=save_path,
+        force_recrawl=force_recrawl
     )
     
     # Run the crawler and wait until it finishes
