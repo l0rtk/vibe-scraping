@@ -38,12 +38,19 @@ if SCRAPY_AVAILABLE:
         def __init__(self, *args, **kwargs):
             """Initialize the spider with custom parameters."""
             # Extract parameters from kwargs
+            start_urls = kwargs.pop('start_urls', [])
             self.start_url = kwargs.pop('start_url', None)
             self.max_depth = kwargs.pop('max_depth', 5)
             self.follow_subdomains = kwargs.pop('follow_subdomains', False)
             self.respect_robots = kwargs.pop('respect_robots', True)
             self.save_path = kwargs.pop('save_path', 'crawled_data')
             self.force_recrawl = kwargs.pop('force_recrawl', True)
+            
+            # Setup the start URLs first - before accessing them in _load_metadata
+            if self.start_url and self.start_url not in start_urls:
+                start_urls.append(self.start_url)
+                
+            self.start_urls = start_urls if start_urls else []
             
             # Create a save directory if it doesn't exist
             os.makedirs(self.save_path, exist_ok=True)
@@ -61,17 +68,20 @@ if SCRAPY_AVAILABLE:
             
             self.metadata = self._load_metadata()
             
-            # Setup the start URLs
-            self.start_urls = [self.start_url] if self.start_url else []
+            # Extract domains from start URLs
+            self.base_domains = []
+            self.base_scheme = 'https'  # Default
             
-            # Extract domain from start URL
-            if self.start_url:
-                parsed_url = urlparse(self.start_url)
-                self.base_domain = parsed_url.netloc
-                self.base_scheme = parsed_url.scheme
+            for url in self.start_urls:
+                parsed_url = urlparse(url)
+                domain = parsed_url.netloc
+                if domain and domain not in self.base_domains:
+                    self.base_domains.append(domain)
+                if parsed_url.scheme:
+                    self.base_scheme = parsed_url.scheme
             
-            # Define crawl rules
-            allowed_domains = [self.base_domain] if not self.follow_subdomains else None
+            # Define allowed domains
+            allowed_domains = self.base_domains if not self.follow_subdomains else None
             
             # Create rules based on the parameters
             rules = [
@@ -95,7 +105,7 @@ if SCRAPY_AVAILABLE:
             self.stats = {
                 'pages_crawled': 0,
                 'start_time': datetime.now().isoformat(),
-                'start_url': self.start_url,
+                'start_urls': self.start_urls,
                 'max_depth': self.max_depth
             }
             
@@ -120,14 +130,14 @@ if SCRAPY_AVAILABLE:
                 "last_crawl": None,
                 "crawled_urls": {},
                 "pages_crawled": 0,
-                "start_url": self.start_url
+                "start_urls": getattr(self, 'start_urls', [])
             }
         
         def _update_metadata(self):
             """Update and save metadata after crawling."""
             self.metadata["last_crawl"] = datetime.now().isoformat()
             self.metadata["pages_crawled"] = len(self.metadata["crawled_urls"])
-            self.metadata["start_url"] = self.start_url
+            self.metadata["start_urls"] = self.start_urls
             
             # Make sure crawl_stats exists in metadata
             if "crawl_stats" not in self.metadata:
@@ -253,8 +263,9 @@ if SCRAPY_AVAILABLE:
 
 
 def crawl_with_scrapy(
-    start_url, 
-    save_path, 
+    start_url=None, 
+    start_urls=None,
+    save_path="crawled_data", 
     max_depth=5, 
     max_pages=1000, 
     follow_external_links=False,
@@ -272,7 +283,8 @@ def crawl_with_scrapy(
     Crawl a website using Scrapy.
     
     Args:
-        start_url: URL to start crawling from
+        start_url: URL to start crawling from (can be None if start_urls is provided)
+        start_urls: List of URLs to start crawling from (can be None if start_url is provided)
         save_path: Directory to save the crawled data
         max_depth: Maximum crawl depth
         max_pages: Maximum number of pages to crawl
@@ -294,6 +306,21 @@ def crawl_with_scrapy(
     if not SCRAPY_AVAILABLE:
         logger.error("Scrapy is not installed. Please install with: pip install scrapy")
         raise ImportError("Scrapy is not installed")
+    
+    # Ensure we have a list of start URLs
+    urls = []
+    if start_urls:
+        if isinstance(start_urls, list):
+            urls.extend(start_urls)
+        else:
+            urls.append(start_urls)
+    
+    if start_url and start_url not in urls:
+        urls.append(start_url)
+    
+    if not urls:
+        logger.error("No start URLs provided")
+        raise ValueError("No start URLs provided")
     
     # Create a directory for saving crawled data
     if not os.path.exists(save_path):
@@ -346,6 +373,7 @@ def crawl_with_scrapy(
     process.crawl(
         VibeCrawlSpider,
         start_url=start_url,
+        start_urls=urls,
         max_depth=max_depth,
         follow_subdomains=follow_external_links,
         respect_robots=respect_robots_txt,
@@ -365,7 +393,7 @@ def crawl_with_scrapy(
         # Return a dictionary with crawl statistics
         return {
             'pages_crawled': metadata.get('pages_crawled', 0),
-            'start_url': start_url,
+            'start_urls': urls,
             'max_depth': max_depth,
             'max_pages': max_pages,
             'save_path': save_path

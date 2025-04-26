@@ -8,10 +8,12 @@ import logging
 import boto3
 import shutil
 from urllib.parse import urlparse
+import tldextract
 from botocore.exceptions import ClientError, NoCredentialsError
 from vibe_scraping.crawler import WebCrawler
 from dotenv import load_dotenv
 from boto3.s3.transfer import TransferConfig
+import json
 
 load_dotenv()
 
@@ -19,18 +21,27 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def crawler_func(website, 
+def extract_domain(url):
+    """
+    Extract clean domain from URL using tldextract.
+    Returns format like 'example.com' without subdomain or 'www.'
+    """
+    extracted = tldextract.extract(url)
+    # Return the registered domain (domain + suffix, e.g., example.com)
+    return f"{extracted.domain}.{extracted.suffix}"
+
+def crawler_func(websites, 
                 bucket="first-hapttic-bucket", 
-                max_pages=10, 
+                max_pages=500, 
                 max_depth=5, 
                 remove_local_files=True, 
                 skip_existing=True,
                 force_fresh_crawl=True):
     """
-    Crawls a website and uploads the data to an S3 bucket.
+    Crawls websites and uploads the data to an S3 bucket.
     
     Args:
-        website (str): URL of the website to crawl
+        websites (str or list): URL or list of URLs to crawl
         bucket (str): S3 bucket name
         max_pages (int): Maximum number of pages to crawl
         max_depth (int): Maximum depth to crawl
@@ -41,18 +52,34 @@ def crawler_func(website,
     Returns:
         dict: Summary of the crawl and upload operation
     """
-    # Extract domain for S3 prefix
-    domain = urlparse(website).netloc
-    s3_prefix = f"crawler_data/{domain}"
+    # Ensure websites is a list
+    if isinstance(websites, str):
+        websites = [websites]
+        
+    # Create a map of URLs to their extracted domains and S3 prefixes
+    url_to_domain = {url: extract_domain(url) for url in websites}
+    url_to_raw_domain = {url: urlparse(url).netloc for url in websites}
     
-    # Crawl the website
-    logger.info(f"Starting crawl of {website}")
+    # Get unique clean domains
+    domains = list(set(url_to_domain.values()))
+    
+    # Create mapping from raw domain to extracted domain
+    raw_to_extracted = {
+        url_to_raw_domain[url]: url_to_domain[url] 
+        for url in websites
+    }
+    
+    # Create mapping from domain to S3 prefix
+    domain_to_prefix = {domain: f"crawler_data/{domain}" for domain in domains}
+    
+    # Crawl the websites
+    logger.info(f"Starting crawl of {len(websites)} websites: {', '.join(websites)}")
     local_dir = "./data_to_upload"
     os.makedirs(local_dir, exist_ok=True)
 
     # Create and run crawler with force_fresh_crawl option
     crawler = WebCrawler(
-        start_url=website,
+        start_urls=websites,
         max_depth=max_depth,
         max_pages=max_pages,
         respect_robots_txt=False,
@@ -77,7 +104,7 @@ def crawler_func(website,
         return {
             'success': False,
             'pages_crawled': pages,
-            'website': website,
+            'websites': websites,
             'error': 'Missing AWS credentials'
         }
 
@@ -110,7 +137,7 @@ def crawler_func(website,
                 return {
                     'success': False,
                     'pages_crawled': pages,
-                    'website': website,
+                    'websites': websites,
                     'error': 'Access denied to S3 bucket'
                 }
             elif error_code == '404':
@@ -118,7 +145,7 @@ def crawler_func(website,
                 return {
                     'success': False,
                     'pages_crawled': pages,
-                    'website': website,
+                    'websites': websites,
                     'error': f"Bucket {bucket} does not exist"
                 }
             elif error_code == 'InvalidAccessKeyId':
@@ -126,7 +153,7 @@ def crawler_func(website,
                 return {
                     'success': False,
                     'pages_crawled': pages,
-                    'website': website,
+                    'websites': websites,
                     'error': 'Invalid AWS access key ID'
                 }
             else:
@@ -134,7 +161,7 @@ def crawler_func(website,
                 return {
                     'success': False,
                     'pages_crawled': pages,
-                    'website': website,
+                    'websites': websites,
                     'error': f"Error accessing bucket: {str(e)}"
                 }
                 
@@ -143,7 +170,7 @@ def crawler_func(website,
         return {
             'success': False,
             'pages_crawled': pages,
-            'website': website,
+            'websites': websites,
             'error': 'AWS credentials not found or are invalid'
         }
     except Exception as e:
@@ -151,7 +178,7 @@ def crawler_func(website,
         return {
             'success': False,
             'pages_crawled': pages,
-            'website': website,
+            'websites': websites,
             'error': f"Error initializing S3 client: {str(e)}"
         }
 
@@ -160,27 +187,93 @@ def crawler_func(website,
     bytes_uploaded = 0
     files_skipped = 0
     
-    # Get all existing objects in the S3 prefix for efficient checking
-    existing_s3_objects = set()
+    # Get all existing objects in each S3 prefix for efficient checking
+    existing_s3_objects_by_prefix = {}
     if skip_existing:
-        logger.info(f"Fetching existing objects in s3://{bucket}/{s3_prefix}")
-        try:
-            paginator = s3.get_paginator('list_objects_v2')
-            page_iterator = paginator.paginate(Bucket=bucket, Prefix=s3_prefix)
-            for page in page_iterator:
-                if 'Contents' in page:
-                    for obj in page['Contents']:
-                        existing_s3_objects.add(obj['Key'])
-            logger.info(f"Found {len(existing_s3_objects)} existing objects in S3")
-        except Exception as e:
-            logger.warning(f"Error fetching existing S3 objects: {e}. Will check files individually.")
+        for domain, prefix in domain_to_prefix.items():
+            logger.info(f"Fetching existing objects in s3://{bucket}/{prefix}")
+            try:
+                existing_objects = set()
+                paginator = s3.get_paginator('list_objects_v2')
+                page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+                for page in page_iterator:
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            existing_objects.add(obj['Key'])
+                existing_s3_objects_by_prefix[prefix] = existing_objects
+                logger.info(f"Found {len(existing_objects)} existing objects in s3://{bucket}/{prefix}")
+            except Exception as e:
+                logger.warning(f"Error fetching existing S3 objects for {prefix}: {e}")
+                existing_s3_objects_by_prefix[prefix] = set()
+
+    # Create a URL to domain/prefix mapping for all pages crawled
+    url_to_domain_map = {}
+    
+    # First, try to get the mapping from metadata files
+    for root, dirs, files in os.walk(local_dir):
+        for file in files:
+            if file == "metadata.json":
+                try:
+                    metadata_path = os.path.join(root, file)
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    if "url" in metadata:
+                        url = metadata["url"]
+                        # Extract clean domain using tldextract
+                        clean_domain = extract_domain(url)
+                        if clean_domain in domain_to_prefix:
+                            url_to_domain_map[os.path.dirname(metadata_path)] = clean_domain
+                except Exception as e:
+                    logger.warning(f"Error reading metadata file {metadata_path}: {e}")
+    
+    # Helper function to determine the S3 prefix for a file
+    def get_s3_prefix_for_file(file_path):
+        # First check if this file's directory has a mapping
+        directory = os.path.dirname(file_path)
+        if directory in url_to_domain_map:
+            domain = url_to_domain_map[directory]
+            return domain_to_prefix[domain]
+        
+        # For files without a mapping, try to determine from metadata.json in their directory
+        metadata_path = os.path.join(os.path.dirname(file_path), "metadata.json")
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                if "url" in metadata:
+                    url = metadata["url"]
+                    clean_domain = extract_domain(url)
+                    if clean_domain in domain_to_prefix:
+                        # Add to our mapping for future lookups
+                        url_to_domain_map[os.path.dirname(file_path)] = clean_domain
+                        return domain_to_prefix[clean_domain]
+            except Exception as e:
+                logger.warning(f"Error determining domain for {file_path}: {e}")
+        
+        # If no mapping available, use the first domain as fallback
+        return domain_to_prefix[domains[0]]
 
     # Helper function to upload a file to S3
-    def upload_file(file_path, s3_key):
+    def upload_file(file_path, relative_path):
         nonlocal files_uploaded, bytes_uploaded, files_skipped
         
+        # Determine which S3 prefix to use based on the file's URL domain
+        s3_prefix = get_s3_prefix_for_file(file_path)
+        
+        # Create S3 key (path within the bucket)
+        if relative_path == ".":
+            s3_key = f"{s3_prefix}/{os.path.basename(file_path)}"
+        else:
+            # Preserve directory structure by using the full relative path
+            # This will include the hash directory and maintain structure
+            if relative_path != os.path.basename(relative_path):
+                s3_key = f"{s3_prefix}/{relative_path}"
+            else:
+                s3_key = f"{s3_prefix}/{relative_path}/{os.path.basename(file_path)}"
+        
         # Check if file already exists in S3 and should be skipped
-        if skip_existing and s3_key in existing_s3_objects:
+        if skip_existing and s3_prefix in existing_s3_objects_by_prefix and s3_key in existing_s3_objects_by_prefix[s3_prefix]:
             logger.info(f"Skipping {file_path} - already exists in S3")
             files_skipped += 1
             return True
@@ -216,14 +309,7 @@ def crawler_func(website,
         # Upload all files in this directory
         for file in files:
             local_file_path = os.path.join(root, file)
-            
-            # Create S3 key (path within the bucket)
-            if relative_path == ".":
-                s3_key = f"{s3_prefix}/{file}"
-            else:
-                s3_key = f"{s3_prefix}/{relative_path}/{file}"
-                
-            upload_file(local_file_path, s3_key)
+            upload_file(local_file_path, relative_path if relative_path != "." else file)
 
     # Clean up local files if requested
     if remove_local_files and os.path.exists(local_dir):
@@ -238,12 +324,13 @@ def crawler_func(website,
     summary = {
         'success': True,
         'pages_crawled': pages,
-        'website': website,
+        'websites': websites,
         'files_uploaded': files_uploaded,
         'files_skipped': files_skipped,
         'bytes_uploaded': bytes_uploaded,
         'bucket': bucket,
-        's3_prefix': s3_prefix,
+        's3_prefixes': list(domain_to_prefix.values()),
+        'domains': domains,
         'local_files_removed': not os.path.exists(local_dir) if remove_local_files else False
     }
     
@@ -251,17 +338,19 @@ def crawler_func(website,
 
 # Example usage
 if __name__ == "__main__":
-    website = "https://newshub.ge"
-    result = crawler_func(website)
+    websites = ["https://newshub.ge", "https://www.ambebi.ge"]
+    result = crawler_func(websites)
     
     # Print summary
     print("\nCrawl and upload summary:")
-    print(f"Crawled {result['pages_crawled']} pages from {result['website']}")
+    print(f"Crawled {result['pages_crawled']} pages from {len(result['websites'])} websites")
     
     if result['success']:
         print(f"Uploaded {result['files_uploaded']} files ({result['bytes_uploaded'] / (1024*1024):.2f} MB)")
         print(f"Skipped {result['files_skipped']} existing files")
-        print(f"Files stored in S3 bucket: {result['bucket']}/{result['s3_prefix']}")
+        print(f"Files stored in S3 bucket: {result['bucket']} with prefixes:")
+        for prefix in result['s3_prefixes']:
+            print(f"  - {prefix}")
         if result.get('local_files_removed', False):
             print("Local files have been removed.")
     else:

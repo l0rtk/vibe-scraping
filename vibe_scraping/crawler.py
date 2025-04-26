@@ -14,7 +14,8 @@ class WebCrawler:
     
     def __init__(
         self,
-        start_url,
+        start_url=None,
+        start_urls=None,
         max_depth=5,
         max_pages=1000,
         follow_external_links=False,
@@ -26,6 +27,18 @@ class WebCrawler:
         force_fresh_crawl=True
     ):
         self.start_url = start_url
+        self.start_urls = []
+        
+        # Build the list of start URLs
+        if start_urls:
+            if isinstance(start_urls, list):
+                self.start_urls.extend(start_urls)
+            else:
+                self.start_urls.append(start_urls)
+                
+        if start_url and start_url not in self.start_urls:
+            self.start_urls.append(start_url)
+            
         self.max_depth = max_depth
         self.max_pages = max_pages
         self.follow_external_links = follow_external_links
@@ -37,15 +50,21 @@ class WebCrawler:
         self.force_fresh_crawl = force_fresh_crawl
         
         os.makedirs(self.save_path, exist_ok=True)
-        self.domain = urlparse(start_url).netloc
+        
+        # Get domain from first URL if available
+        self.domain = urlparse(self.start_urls[0]).netloc if self.start_urls else ""
     
     def crawl(self):
         """Start crawling using Scrapy."""
         if not SCRAPY_AVAILABLE:
             raise ImportError("Scrapy is not installed. Install with: pip install scrapy")
             
+        if not self.start_urls:
+            raise ValueError("No start URLs provided. Set either start_url or start_urls.")
+            
         return crawl_with_scrapy(
             start_url=self.start_url,
+            start_urls=self.start_urls,
             save_path=self.save_path,
             max_depth=self.max_depth,
             max_pages=self.max_pages,
@@ -58,12 +77,13 @@ class WebCrawler:
             force_recrawl=self.force_fresh_crawl
         )
 
-def crawl_site(start_url, output_dir="crawled_data", max_depth=5, max_pages=1000, 
+def crawl_site(start_url=None, start_urls=None, output_dir="crawled_data", max_depth=5, max_pages=1000, 
                delay=0.1, follow_external_links=False, respect_robots_txt=True, user_agent=None,
                force_fresh_crawl=True):
     """Convenience function to crawl a website."""
     crawler = WebCrawler(
         start_url=start_url,
+        start_urls=start_urls,
         max_depth=max_depth,
         max_pages=max_pages,
         follow_external_links=follow_external_links,
@@ -83,7 +103,7 @@ if __name__ == "__main__":
     
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Web crawler for collecting pages from websites")
-    parser.add_argument("url", help="URL to start crawling from")
+    parser.add_argument("urls", nargs="+", help="URLs to start crawling from")
     parser.add_argument("--output", default="crawled_data", help="Directory to save the crawled data")
     parser.add_argument("--depth", type=int, default=5, help="Maximum crawl depth")
     parser.add_argument("--pages", type=int, default=1000, help="Maximum number of pages to crawl")
@@ -95,7 +115,7 @@ if __name__ == "__main__":
     
     # Crawl the site
     stats = crawl_site(
-        start_url=args.url,
+        start_urls=args.urls,
         output_dir=args.output,
         max_depth=args.depth,
         max_pages=args.pages,
@@ -110,5 +130,5 @@ if __name__ == "__main__":
     print(f"\nCrawl completed:")
     print(f"Pages crawled: {stats['pages_crawled']}")
     print(f"Max depth: {stats['max_depth']}")
-    print(f"Start URL: {stats['start_url']}")
+    print(f"Start URLs: {', '.join(stats['start_urls'])}")
     print(f"Output directory: {args.output}") 
