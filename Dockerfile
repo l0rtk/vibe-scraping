@@ -14,8 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
 
 # Set environment variables (these should be overridden at runtime)
-ENV AWS_ACCESS_KEY="AKIAW5BDQ7ZLWPDSL5EC"
-ENV AWS_SECRET_KEY="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"
+ENV AWS_ACCESS_KEY=""
+ENV AWS_SECRET_KEY=""
 ENV AWS_REGION="us-east-1"
 
 # Set the entrypoint to run.py
